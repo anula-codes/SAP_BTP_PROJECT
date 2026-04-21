@@ -1,0 +1,173 @@
+# ============================================================
+# NovaBuild P2P Analytics — MTA Deployment Descriptor
+# File: mta.yaml
+# ============================================================
+
+_schema-version: "3.3.0"
+ID: novabuild-p2p-analytics
+version: 1.0.0
+description: NovaBuild Manufacturing P2P Analytics Service on SAP BTP
+
+parameters:
+  enable-parallel-deployments: true
+  deploy_mode: html5-repo
+
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci --production
+
+# ─── MODULES ──────────────────────────────────────────────────
+modules:
+
+  # ── CAP Backend Service ─────────────────────────────────────
+  - name: novabuild-p2p-analytics-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      memory: 512M
+      disk-quota: 1024M
+    build-parameters:
+      builder: npm-ci
+    properties:
+      EXIT: 1
+      TENANT_HOST_PATTERN: "^(.*)-${default-uri}"
+    requires:
+      - name: novabuild-hana-db
+      - name: novabuild-xsuaa
+      - name: novabuild-destination
+      - name: novabuild-connectivity
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+
+  # ── DB Deployer (HANA schema deployment) ────────────────────
+  - name: novabuild-p2p-analytics-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+      memory: 256M
+    requires:
+      - name: novabuild-hana-db
+
+  # ── Fiori App (HTML5 Static Files) ──────────────────────────
+  - name: novabuild-p2p-analytics-app
+    type: html5
+    path: app/webapp
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm install
+        - npm run build
+      supported-platforms: []
+    requires:
+      - name: novabuild-xsuaa
+
+  # ── HTML5 App Deployer ───────────────────────────────────────
+  - name: novabuild-p2p-analytics-app-deployer
+    type: com.sap.application.content
+    path: .
+    requires:
+      - name: novabuild-html5-repo-host
+        parameters:
+          content-target: true
+    build-parameters:
+      build-result: resources
+      requires:
+        - name: novabuild-p2p-analytics-app
+          artifacts:
+            - dist/novabuild-p2p-analytics.zip
+          target-path: resources/
+
+  # ── Destination Config Deployer ──────────────────────────────
+  - name: novabuild-p2p-analytics-destination-deployer
+    type: com.sap.application.content
+    requires:
+      - name: novabuild-destination
+        parameters:
+          content-target: true
+      - name: novabuild-html5-repo-host
+        parameters:
+          service-key:
+            name: novabuild-html5-repo-host-key
+      - name: novabuild-xsuaa
+        parameters:
+          service-key:
+            name: novabuild-xsuaa-key
+      - name: srv-api
+    parameters:
+      content:
+        instance:
+          destinations:
+            - Name: novabuild-p2p-analytics-srv
+              URL: ~{srv-api/srv-url}
+              Authentication: OAuth2UserTokenExchange
+              TokenServiceInstanceName: novabuild-xsuaa
+              TokenServiceKeyName: novabuild-xsuaa-key
+              sap.cloud.service: novabuild.p2p.analytics
+            - Name: novabuild-p2p-analytics-html5-repo
+              ServiceInstanceName: novabuild-html5-repo-host
+              ServiceKeyName: novabuild-html5-repo-host-key
+              sap.cloud.service: novabuild.p2p.analytics
+          existing_destinations_policy: update
+    build-parameters:
+      no-source: true
+
+# ─── RESOURCES ────────────────────────────────────────────────
+resources:
+
+  # ── SAP HANA Cloud ───────────────────────────────────────────
+  - name: novabuild-hana-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+    properties:
+      hdi-service-name: ${service-name}
+
+  # ── XSUAA (Authentication) ───────────────────────────────────
+  - name: novabuild-xsuaa
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: novabuild-p2p-analytics-${org}-${space}
+        tenant-mode: dedicated
+
+  # ── Destination Service ──────────────────────────────────────
+  - name: novabuild-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            existing_destinations_policy: update
+            destinations:
+              - Name: ui5
+                URL: https://ui5.sap.com
+                ProxyType: Internet
+                Authentication: NoAuthentication
+
+  # ── Connectivity Service ─────────────────────────────────────
+  - name: novabuild-connectivity
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: connectivity
+      service-plan: lite
+
+  # ── HTML5 Repository ─────────────────────────────────────────
+  - name: novabuild-html5-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host

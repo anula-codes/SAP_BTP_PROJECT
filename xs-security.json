@@ -1,0 +1,63 @@
+{
+  "xsappname": "novabuild-p2p-analytics",
+  "tenant-mode": "dedicated",
+  "description": "NovaBuild P2P Analytics - Security Configuration",
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.P2PViewer",
+      "description": "Read-only access to P2P Analytics data - procurement reports and dashboards"
+    },
+    {
+      "name": "$XSAPPNAME.P2PApprover",
+      "description": "Full access including approval of PRs, GR posting, and invoice approvals"
+    }
+  ],
+  "attributes": [
+    {
+      "name": "plant",
+      "description": "Restricts access to a specific manufacturing plant",
+      "valueType": "string"
+    }
+  ],
+  "role-templates": [
+    {
+      "name": "P2PViewer",
+      "description": "Procurement Analytics Viewer - dashboard and reports access",
+      "scope-references": ["$XSAPPNAME.P2PViewer"],
+      "attribute-references": ["plant"]
+    },
+    {
+      "name": "P2PApprover",
+      "description": "Procurement Approver - PR approvals, GR postings, invoice verification",
+      "scope-references": [
+        "$XSAPPNAME.P2PViewer",
+        "$XSAPPNAME.P2PApprover"
+      ],
+      "attribute-references": ["plant"]
+    }
+  ],
+  "role-collections": [
+    {
+      "name": "NovaBuild_P2P_Viewer",
+      "description": "Role collection for procurement viewers and analysts",
+      "role-template-references": [
+        "$XSAPPNAME.P2PViewer"
+      ]
+    },
+    {
+      "name": "NovaBuild_P2P_Approver",
+      "description": "Role collection for procurement managers and approvers",
+      "role-template-references": [
+        "$XSAPPNAME.P2PApprover"
+      ]
+    }
+  ],
+  "oauth2-configuration": {
+    "token-validity": 43200,
+    "redirect-uris": [
+      "https://*.hana.ondemand.com/**",
+      "http://localhost:4004/**"
+    ],
+    "autoapprove": true
+  }
+}

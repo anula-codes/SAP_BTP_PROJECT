@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NovaBuild P2P Analytics — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+<style>
+/* Inline overrides for standalone mode */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; }
+.nb-table-scroll { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+.nb-loading { display: flex; align-items: center; justify-content: center; height: 120px; gap: 10px; color: #7d8590; font-size: 0.75rem; letter-spacing: 0.1em; }
+.nb-spinner { width: 18px; height: 18px; border: 2px solid #30363d; border-top-color: #d4a017; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.nb-empty { padding: 1.5rem; text-align: center; color: #7d8590; font-size: 0.72rem; letter-spacing: 0.08em; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.nb-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center; }
+.nb-modal-overlay.open { display:flex; }
+.nb-modal { background: #1c2128; border: 1px solid #30363d; border-radius: 6px; width: 480px; max-width:90vw; }
+.nb-modal-head { padding: 1rem 1.2rem; border-bottom: 1px solid #30363d; display:flex; justify-content:space-between; align-items:center; }
+.nb-modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: #d4a017; letter-spacing: 0.12em; }
+.nb-modal-close { background:none; border:none; color:#7d8590; cursor:pointer; font-size:1.2rem; }
+.nb-modal-body { padding: 1.2rem; }
+.nb-modal-foot { padding: 0.8rem 1.2rem; border-top: 1px solid #30363d; display:flex; justify-content:flex-end; gap:0.5rem; }
+.nb-textarea { width:100%; background:#0d1117; border:1px solid #30363d; border-radius:4px; padding:0.6rem; color:#e6edf3; font-family:'DM Mono',monospace; font-size:0.75rem; resize:vertical; min-height:80px; outline:none; }
+.nb-textarea:focus { border-color:#d4a017; }
+.nb-form-label { font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; color:#7d8590; display:block; margin-bottom:0.4rem; }
+.nb-toast { position:fixed; bottom:1.5rem; right:1.5rem; background:#1c2128; border:1px solid #30363d; border-radius:4px; padding:0.75rem 1.2rem; font-size:0.75rem; color:#e6edf3; z-index:300; transform:translateY(20px); opacity:0; transition:all 0.25s; max-width:320px; }
+.nb-toast.show { transform:translateY(0); opacity:1; }
+.nb-toast.success { border-left:3px solid #3fb950; }
+.nb-toast.error   { border-left:3px solid #f85149; }
+.nb-toast.info    { border-left:3px solid #d4a017; }
+</style>
+</head>
+<body>
+<div class="nb-dashboard" id="app">
+
+  <!-- HEADER -->
+  <header class="nb-header">
+    <div class="nb-logo">
+      NovaBuild P2P
+      <span>Procure · Receive · Pay</span>
+    </div>
+    <nav class="nb-nav">
+      <button class="nb-nav-btn active" onclick="showTab('dashboard',this)">Dashboard</button>
+      <button class="nb-nav-btn" onclick="showTab('orders',this)">Purchase Orders</button>
+      <button class="nb-nav-btn" onclick="showTab('requisitions',this)">Requisitions</button>
+      <button class="nb-nav-btn" onclick="showTab('receipts',this)">Goods Receipts</button>
+      <button class="nb-nav-btn" onclick="showTab('invoices',this)">Invoices</button>
+      <button class="nb-nav-btn" onclick="showTab('analytics',this)">Analytics</button>
+      <button class="nb-nav-btn" onclick="showTab('audit',this)">Audit Log</button>
+    </nav>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="nb-btn nb-btn-ghost" onclick="refreshData()" style="font-size:0.65rem;padding:0.3rem 0.8rem">⟳ Refresh</button>
+      <div class="nb-user-chip">
+        <span class="nb-user-dot"></span>
+        <span id="currentUser">alice@novabuild</span>
+        <span style="color:#30363d">|</span>
+        <select id="userSwitch" onchange="switchUser(this.value)" style="background:none;border:none;color:#7d8590;font-size:0.72rem;cursor:pointer;outline:none">
+          <option value="alice">Approver</option>
+          <option value="bob">Viewer</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <div class="nb-main">
+
+    <!-- ══ TAB: DASHBOARD ════════════════════════════════════ -->
+    <div class="tab-panel active" id="tab-dashboard">
+
+      <!-- KPI Row -->
+      <div class="nb-kpi-grid">
+        <div class="nb-kpi-card nb-slide-up">
+          <div class="nb-kpi-label">Open Purchase Orders</div>
+          <div class="nb-kpi-value amber" id="kpi-openPOs">—</div>
+          <div class="nb-kpi-sub">Active procurement</div>
+          <span class="nb-kpi-icon">📋</span>
+        </div>
+        <div class="nb-kpi-card nb-slide-up">
+          <div class="nb-kpi-label">Pending Approvals</div>
+          <div class="nb-kpi-value orange" id="kpi-pendingPRs">—</div>
+          <div class="nb-kpi-sub">PRs awaiting decision</div>
+          <span class="nb-kpi-icon">✅</span>
+        </div>
+        <div class="nb-kpi-card nb-slide-up">
+          <div class="nb-kpi-label">Total Spend (YTD)</div>
+          <div class="nb-kpi-value blue" id="kpi-spendMTD">—</div>
+          <div class="nb-kpi-sub">INR across all plants</div>
+          <span class="nb-kpi-icon">₹</span>
+        </div>
+        <div class="nb-kpi-card nb-slide-up">
+          <div class="nb-kpi-label">Pending Invoices</div>
+          <div class="nb-kpi-value red" id="kpi-pendingInv">—</div>
+          <div class="nb-kpi-sub">Awaiting verification</div>
+          <span class="nb-kpi-icon">🧾</span>
+        </div>
+        <div class="nb-kpi-card nb-slide-up">
+          <div class="nb-kpi-label">Overdue Deliveries</div>
+          <div class="nb-kpi-value red" id="kpi-overdue">—</div>
+          <div class="nb-kpi-sub">Past delivery date</div>
+          <span class="nb-kpi-icon">⚠️</span>
+        </div>
+      </div>
+
+      <!-- P2P Flow Status -->
+      <p class="nb-section-title">Procurement Flow Status</p>
+      <div class="nb-panel" style="margin-bottom:1rem">
+        <div class="nb-panel-body">
+          <div class="nb-flow">
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon done">📝</div>
+              <div class="nb-flow-count" id="flow-prs">10</div>
+              <div class="nb-flow-label">Requisitions</div>
+            </div>
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon active">✅</div>
+              <div class="nb-flow-count" id="flow-pending">4</div>
+              <div class="nb-flow-label">Pending Approval</div>
+            </div>
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon done">📦</div>
+              <div class="nb-flow-count" id="flow-pos">15</div>
+              <div class="nb-flow-label">Purchase Orders</div>
+            </div>
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon done">🏭</div>
+              <div class="nb-flow-count" id="flow-grs">10</div>
+              <div class="nb-flow-label">Goods Receipts</div>
+            </div>
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon active">🧾</div>
+              <div class="nb-flow-count" id="flow-inv">8</div>
+              <div class="nb-flow-label">Invoices</div>
+            </div>
+            <div class="nb-flow-step">
+              <div class="nb-flow-icon done">💳</div>
+              <div class="nb-flow-count">5</div>
+              <div class="nb-flow-label">Paid</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nb-grid-3">
+        <!-- Spend by Vendor -->
+        <div class="nb-panel">
+          <div class="nb-panel-header">
+            <span class="nb-panel-title">Top Vendors by Spend</span>
+            <span class="nb-panel-badge">YTD</span>
+          </div>
+          <div class="nb-panel-body">
+            <div id="vendor-bars" class="nb-bar-chart"></div>
+          </div>
+        </div>
+
+        <!-- Approval Queue -->
+        <div class="nb-panel">
+          <div class="nb-panel-header">
+            <span class="nb-panel-title">Approval Queue</span>
+            <span class="nb-panel-badge" id="queue-count">0 Pending</span>
+          </div>
+          <div class="nb-panel-body" style="padding:0.5rem 1.2rem" id="approval-queue">
+            <div class="nb-loading"><div class="nb-spinner"></div>Loading…</div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="nb-panel">
+          <div class="nb-panel-header">
+            <span class="nb-panel-title">Recent Activity</span>
+            <span class="nb-panel-badge">Live</span>
+          </div>
+          <div class="nb-panel-body" style="padding:0.5rem 1.2rem" id="activity-feed">
+            <div class="nb-loading"><div class="nb-spinner"></div>Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monthly Spend Chart -->
+      <p class="nb-section-title" style="margin-top:0.5rem">Monthly Spend Trend</p>
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Spend by Month (INR)</span>
+          <span class="nb-panel-badge">FY 2025</span>
+        </div>
+        <div class="nb-panel-body">
+          <div id="monthly-chart" style="height:120px;display:flex;align-items:flex-end;gap:12px;padding:0.5rem 0"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: PURCHASE ORDERS ══════════════════════════════ -->
+    <div class="tab-panel" id="tab-orders">
+      <div class="nb-filter-bar">
+        <input class="nb-input" id="po-search" placeholder="Search PO number or vendor…" oninput="filterTable('po-table','po-search')" style="flex:1;max-width:320px"/>
+        <select class="nb-select" id="po-plant" onchange="filterTable('po-table','po-search','po-plant','po-status')">
+          <option value="">All Plants</option>
+          <option value="NB10">NB10 — Bhubaneswar</option>
+          <option value="NB20">NB20 — Pune</option>
+        </select>
+        <select class="nb-select" id="po-status" onchange="filterTable('po-table','po-search','po-plant','po-status')">
+          <option value="">All Status</option>
+          <option value="OPEN">Open</option>
+          <option value="PARTIALLY_DELIVERED">Partially Delivered</option>
+          <option value="FULLY_DELIVERED">Fully Delivered</option>
+          <option value="INVOICED">Invoiced</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+        <button class="nb-btn nb-btn-primary" onclick="openCreatePO()">+ New PO</button>
+      </div>
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Purchase Orders</span>
+          <span class="nb-panel-badge" id="po-count">15 Records</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="po-table">
+            <thead><tr>
+              <th>PO Number</th><th>PR Ref.</th><th>Vendor</th><th>Plant</th>
+              <th>Purch. Group</th><th>Doc Date</th><th>Delivery Date</th>
+              <th style="text-align:right">Net Value (INR)</th>
+              <th style="text-align:right">Tax (INR)</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="po-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: REQUISITIONS ═════════════════════════════════ -->
+    <div class="tab-panel" id="tab-requisitions">
+      <div class="nb-filter-bar">
+        <input class="nb-input" id="pr-search" placeholder="Search PR number, title or requester…" oninput="filterTable('pr-table','pr-search')" style="flex:1;max-width:320px"/>
+        <select class="nb-select" id="pr-status-filter" onchange="filterTable('pr-table','pr-search','','pr-status-filter')">
+          <option value="">All Status</option>
+          <option value="PENDING">Pending</option>
+          <option value="APPROVED">Approved</option>
+          <option value="CONVERTED">Converted</option>
+          <option value="REJECTED">Rejected</option>
+        </select>
+        <button class="nb-btn nb-btn-primary" onclick="openCreatePR()">+ New PR</button>
+      </div>
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Purchase Requisitions</span>
+          <span class="nb-panel-badge" id="pr-count">10 Records</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="pr-table">
+            <thead><tr>
+              <th>PR Number</th><th>Title</th><th>Requested By</th><th>Plant</th>
+              <th>Cost Center</th><th>Date</th><th style="text-align:right">Est. Value (INR)</th>
+              <th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="pr-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: GOODS RECEIPTS ═══════════════════════════════ -->
+    <div class="tab-panel" id="tab-receipts">
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Goods Receipts</span>
+          <span class="nb-panel-badge">10 Records</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="gr-table">
+            <thead><tr>
+              <th>GR Number</th><th>PO Reference</th><th>Vendor</th><th>Plant</th>
+              <th>Posting Date</th><th>Mvt Type</th>
+              <th style="text-align:right">GR Value (INR)</th>
+              <th>Delivery Note</th><th>Status</th>
+            </tr></thead>
+            <tbody id="gr-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: INVOICES ═════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-invoices">
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Invoice Verifications</span>
+          <span class="nb-panel-badge">8 Records</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="inv-table">
+            <thead><tr>
+              <th>Invoice No.</th><th>Vendor</th><th>PO Ref.</th><th>GR Ref.</th>
+              <th>Invoice Date</th><th>Due Date</th>
+              <th style="text-align:right">Base Amt (INR)</th>
+              <th style="text-align:right">GST (INR)</th>
+              <th style="text-align:right">Total (INR)</th>
+              <th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="inv-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: ANALYTICS ════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-analytics">
+      <div class="nb-grid-2" style="margin-bottom:1rem">
+        <!-- P2P Summary -->
+        <div class="nb-panel">
+          <div class="nb-panel-header">
+            <span class="nb-panel-title">P2P Summary — 3-Way Match</span>
+            <span class="nb-panel-badge">Live</span>
+          </div>
+          <div class="nb-table-scroll" style="max-height:260px">
+            <table class="nb-table" id="summary-table">
+              <thead><tr>
+                <th>PO No.</th><th>Vendor</th>
+                <th style="text-align:right">Ordered</th>
+                <th style="text-align:right">Received</th>
+                <th style="text-align:right">Invoiced</th>
+                <th style="text-align:right">Open Amt</th>
+                <th>Status</th>
+              </tr></thead>
+              <tbody id="summary-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Vendor Perf Donut -->
+        <div class="nb-panel">
+          <div class="nb-panel-header">
+            <span class="nb-panel-title">Vendor Spend Distribution</span>
+            <span class="nb-panel-badge">Top 8</span>
+          </div>
+          <div class="nb-panel-body">
+            <div class="nb-donut-wrap">
+              <svg class="nb-donut-svg" width="140" height="140" viewBox="0 0 140 140" id="donut-svg"></svg>
+              <div class="nb-donut-legend" id="donut-legend"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Open PO Tracker -->
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Open PO Tracker</span>
+          <span class="nb-panel-badge" id="overdue-badge">Checking…</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="open-po-table">
+            <thead><tr>
+              <th>PO Number</th><th>Vendor</th><th>Plant</th>
+              <th>Doc Date</th><th>Delivery Date</th>
+              <th style="text-align:right">PO Value (INR)</th>
+              <th>Status</th><th>Overdue</th>
+            </tr></thead>
+            <tbody id="open-po-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: AUDIT LOG ════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-audit">
+      <div class="nb-panel">
+        <div class="nb-panel-header">
+          <span class="nb-panel-title">Audit Trail</span>
+          <span class="nb-panel-badge">All State Changes</span>
+        </div>
+        <div class="nb-table-scroll">
+          <table class="nb-table" id="audit-table">
+            <thead><tr>
+              <th>Timestamp</th><th>Entity Type</th><th>Document ID</th>
+              <th>Action</th><th>Old Status</th><th>New Status</th>
+              <th>Performed By</th><th>Remarks</th>
+            </tr></thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .nb-main -->
+</div><!-- #app -->
+
+<!-- MODALS -->
+<div class="nb-modal-overlay" id="modal-approve">
+  <div class="nb-modal">
+    <div class="nb-modal-head">
+      <span class="nb-modal-title">Approve PR</span>
+      <button class="nb-modal-close" onclick="closeModal('modal-approve')">✕</button>
+    </div>
+    <div class="nb-modal-body">
+      <label class="nb-form-label">PR Number</label>
+      <input class="nb-input" id="modal-pr-id" readonly style="width:100%;margin-bottom:1rem"/>
+      <label class="nb-form-label">Remarks</label>
+      <textarea class="nb-textarea" id="modal-approve-remarks" placeholder="Add approval remarks…"></textarea>
+    </div>
+    <div class="nb-modal-foot">
+      <button class="nb-btn nb-btn-ghost" onclick="closeModal('modal-approve')">Cancel</button>
+      <button class="nb-btn nb-btn-primary" onclick="submitApproval()">Approve PR</button>
+    </div>
+  </div>
+</div>
+
+<div class="nb-modal-overlay" id="modal-reject">
+  <div class="nb-modal">
+    <div class="nb-modal-head">
+      <span class="nb-modal-title" style="color:#f85149">Reject PR</span>
+      <button class="nb-modal-close" onclick="closeModal('modal-reject')">✕</button>
+    </div>
+    <div class="nb-modal-body">
+      <label class="nb-form-label">PR Number</label>
+      <input class="nb-input" id="modal-reject-id" readonly style="width:100%;margin-bottom:1rem"/>
+      <label class="nb-form-label">Rejection Reason <span style="color:#f85149">*</span></label>
+      <textarea class="nb-textarea" id="modal-reject-reason" placeholder="Provide rejection reason (min 5 chars)…"></textarea>
+    </div>
+    <div class="nb-modal-foot">
+      <button class="nb-btn nb-btn-ghost" onclick="closeModal('modal-reject')">Cancel</button>
+      <button class="nb-btn nb-btn-danger" onclick="submitRejection()">Reject PR</button>
+    </div>
+  </div>
+</div>
+
+<div id="nb-toast" class="nb-toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// NovaBuild P2P Analytics — Dashboard JavaScript
+// ══════════════════════════════════════════════════════════════
+
+const BASE_URL = '/p2p';
+let currentUser = 'alice'; // alice = approver, bob = viewer
+let APP_DATA = {};
+
+// ─── Seed / Mock Data ──────────────────────────────────────────
+const MOCK = {
+  kpis: { totalOpenPOs:7, totalPendingPRs:4, totalSpendMTD:7255250, pendingInvoices:1, overdueDeliveries:2 },
+  purchaseOrders: [
+    { poNumber:'PO0000001', prReference:'PR0000001', vendorName:'Tata Steel Limited',    plant:'NB10', purchGroup:'PG1', docDate:'2025-01-10', deliveryDate:'2025-01-25', totalValue:855000,  taxAmount:153900, status:'FULLY_DELIVERED' },
+    { poNumber:'PO0000002', prReference:'PR0000002', vendorName:'SKF India Ltd',          plant:'NB10', purchGroup:'PG2', docDate:'2025-01-12', deliveryDate:'2025-01-20', totalValue:48750,   taxAmount:8775,   status:'INVOICED' },
+    { poNumber:'PO0000003', prReference:'PR0000003', vendorName:'Siemens India Limited',  plant:'NB10', purchGroup:'PG1', docDate:'2025-01-18', deliveryDate:'2025-02-10', totalValue:255000,  taxAmount:45900,  status:'PARTIALLY_DELIVERED' },
+    { poNumber:'PO0000004', prReference:'PR0000004', vendorName:'Havells India Ltd',      plant:'NB20', purchGroup:'PG2', docDate:'2025-01-22', deliveryDate:'2025-01-30', totalValue:36000,   taxAmount:6480,   status:'FULLY_DELIVERED' },
+    { poNumber:'PO0000005', prReference:'PR0000005', vendorName:'Siemens India Limited',  plant:'NB10', purchGroup:'PG1', docDate:'2025-02-05', deliveryDate:'2025-02-20', totalValue:780000,  taxAmount:140400, status:'FULLY_DELIVERED' },
+    { poNumber:'PO0000006', prReference:'',          vendorName:'Mahindra Logistics',     plant:'NB10', purchGroup:'PG2', docDate:'2025-02-08', deliveryDate:'2025-02-15', totalValue:75000,   taxAmount:13500,  status:'INVOICED' },
+    { poNumber:'PO0000007', prReference:'',          vendorName:'Cummins India Limited',  plant:'NB10', purchGroup:'PG1', docDate:'2025-02-12', deliveryDate:'2025-03-05', totalValue:540000,  taxAmount:97200,  status:'OPEN' },
+    { poNumber:'PO0000008', prReference:'',          vendorName:'Bosch India Ltd',        plant:'NB20', purchGroup:'PG1', docDate:'2025-02-15', deliveryDate:'2025-02-28', totalValue:127500,  taxAmount:22950,  status:'PARTIALLY_DELIVERED' },
+    { poNumber:'PO0000009', prReference:'',          vendorName:'Hindustan Zinc Ltd',     plant:'NB10', purchGroup:'PG1', docDate:'2025-02-20', deliveryDate:'2025-03-10', totalValue:320000,  taxAmount:57600,  status:'OPEN' },
+    { poNumber:'PO0000010', prReference:'',          vendorName:'Thermax Ltd',            plant:'NB10', purchGroup:'PG1', docDate:'2025-02-25', deliveryDate:'2025-03-20', totalValue:890000,  taxAmount:160200, status:'OPEN' },
+    { poNumber:'PO0000011', prReference:'',          vendorName:'Larsen & Toubro Ltd',    plant:'NB10', purchGroup:'PG1', docDate:'2025-03-01', deliveryDate:'2025-03-25', totalValue:1250000, taxAmount:225000, status:'OPEN' },
+    { poNumber:'PO0000012', prReference:'',          vendorName:'Tata Steel Limited',     plant:'NB10', purchGroup:'PG1', docDate:'2025-03-05', deliveryDate:'2025-03-20', totalValue:425000,  taxAmount:76500,  status:'OPEN' },
+    { poNumber:'PO0000013', prReference:'',          vendorName:'Mahindra Logistics',     plant:'NB20', purchGroup:'PG2', docDate:'2025-03-08', deliveryDate:'2025-03-15', totalValue:45000,   taxAmount:8100,   status:'CANCELLED' },
+    { poNumber:'PO0000014', prReference:'',          vendorName:'SKF India Ltd',          plant:'NB10', purchGroup:'PG2', docDate:'2025-03-10', deliveryDate:'2025-03-30', totalValue:220000,  taxAmount:39600,  status:'OPEN' },
+    { poNumber:'PO0000015', prReference:'',          vendorName:'Siemens India Limited',  plant:'NB20', purchGroup:'PG1', docDate:'2025-03-12', deliveryDate:'2025-04-05', totalValue:680000,  taxAmount:122400, status:'OPEN' },
+  ],
+  purchaseRequisitions: [
+    { prNumber:'PR0000001', title:'Raw Material Q1 Steel',          requestedBy:'EMP001', plant:'NB10', costCenter:'CC100', requestedDate:'2025-01-05', totalValue:855000,  status:'CONVERTED' },
+    { prNumber:'PR0000002', title:'MRO Items Replenishment Jan',     requestedBy:'EMP002', plant:'NB10', costCenter:'CC200', requestedDate:'2025-01-08', totalValue:48750,   status:'CONVERTED' },
+    { prNumber:'PR0000003', title:'Capital Equipment - PLC Upgrade', requestedBy:'EMP003', plant:'NB10', costCenter:'CC100', requestedDate:'2025-01-15', totalValue:255000,  status:'APPROVED'  },
+    { prNumber:'PR0000004', title:'Safety Equipment Q1',             requestedBy:'EMP004', plant:'NB20', costCenter:'CC200', requestedDate:'2025-01-18', totalValue:36000,   status:'APPROVED'  },
+    { prNumber:'PR0000005', title:'Copper Wire Rod Procurement',     requestedBy:'EMP001', plant:'NB10', costCenter:'CC100', requestedDate:'2025-02-01', totalValue:780000,  status:'CONVERTED' },
+    { prNumber:'PR0000006', title:'Annual Maintenance Contract',     requestedBy:'EMP005', plant:'NB10', costCenter:'CC200', requestedDate:'2025-02-10', totalValue:300000,  status:'PENDING'   },
+    { prNumber:'PR0000007', title:'Paint and Coating Materials',     requestedBy:'EMP002', plant:'NB20', costCenter:'CC100', requestedDate:'2025-02-14', totalValue:112000,  status:'PENDING'   },
+    { prNumber:'PR0000008', title:'Bearings and Spare Parts',        requestedBy:'EMP003', plant:'NB10', costCenter:'CC100', requestedDate:'2025-02-20', totalValue:180000,  status:'REJECTED'  },
+    { prNumber:'PR0000009', title:'Calibration Services FY2025',     requestedBy:'EMP005', plant:'NB10', costCenter:'CC200', requestedDate:'2025-03-01', totalValue:90000,   status:'PENDING'   },
+    { prNumber:'PR0000010', title:'Aluminium Ingot Q2',             requestedBy:'EMP001', plant:'NB10', costCenter:'CC100', requestedDate:'2025-03-10', totalValue:1225000, status:'PENDING'   },
+  ],
+  goodsReceipts: [
+    { grNumber:'GR0000001', poReference:'PO0000001', vendorName:'Tata Steel Limited',   plant:'NB10', postingDate:'2025-01-24', movementType:'101', totalValue:427500, deliveryNote:'DN-TS-20250123', status:'POSTED' },
+    { grNumber:'GR0000002', poReference:'PO0000001', vendorName:'Tata Steel Limited',   plant:'NB10', postingDate:'2025-01-26', movementType:'101', totalValue:427500, deliveryNote:'DN-TS-20250125', status:'POSTED' },
+    { grNumber:'GR0000003', poReference:'PO0000002', vendorName:'SKF India Ltd',        plant:'NB10', postingDate:'2025-01-19', movementType:'101', totalValue:48750,  deliveryNote:'DN-SKF-20250118',status:'POSTED' },
+    { grNumber:'GR0000004', poReference:'PO0000003', vendorName:'Siemens India Limited',plant:'NB10', postingDate:'2025-01-30', movementType:'101', totalValue:127500, deliveryNote:'DN-SE-20250129', status:'POSTED' },
+    { grNumber:'GR0000005', poReference:'PO0000004', vendorName:'Havells India Ltd',    plant:'NB20', postingDate:'2025-01-29', movementType:'101', totalValue:36000,  deliveryNote:'DN-HV-20250128', status:'POSTED' },
+    { grNumber:'GR0000006', poReference:'PO0000005', vendorName:'Siemens India Limited',plant:'NB10', postingDate:'2025-02-18', movementType:'101', totalValue:390000, deliveryNote:'DN-SE-20250217', status:'POSTED' },
+    { grNumber:'GR0000007', poReference:'PO0000005', vendorName:'Siemens India Limited',plant:'NB10', postingDate:'2025-02-21', movementType:'101', totalValue:390000, deliveryNote:'DN-SE-20250220', status:'POSTED' },
+    { grNumber:'GR0000008', poReference:'PO0000006', vendorName:'Mahindra Logistics',   plant:'NB10', postingDate:'2025-02-14', movementType:'101', totalValue:75000,  deliveryNote:'DN-ML-20250213', status:'POSTED' },
+    { grNumber:'GR0000009', poReference:'PO0000008', vendorName:'Bosch India Ltd',      plant:'NB20', postingDate:'2025-02-27', movementType:'101', totalValue:63750,  deliveryNote:'DN-BO-20250226', status:'POSTED' },
+    { grNumber:'GR0000010', poReference:'PO0000007', vendorName:'Cummins India Limited',plant:'NB10', postingDate:'2025-03-04', movementType:'101', totalValue:270000, deliveryNote:'DN-CM-20250303', status:'POSTED' },
+  ],
+  invoices: [
+    { invoiceNo:'INV-TS-00123', vendorName:'Tata Steel',    poReference:'PO0000001', grReference:'GR0000001', invoiceDate:'2025-01-25', dueDate:'2025-02-24', baseAmount:427500, taxAmount:76950,  invoiceAmount:504450, status:'PAID'     },
+    { invoiceNo:'INV-TS-00131', vendorName:'Tata Steel',    poReference:'PO0000001', grReference:'GR0000002', invoiceDate:'2025-01-27', dueDate:'2025-02-27', baseAmount:427500, taxAmount:76950,  invoiceAmount:504450, status:'PAID'     },
+    { invoiceNo:'INV-SKF-4521', vendorName:'SKF India',     poReference:'PO0000002', grReference:'GR0000003', invoiceDate:'2025-01-21', dueDate:'2025-03-07', baseAmount:48750,  taxAmount:8775,   invoiceAmount:57525,  status:'PAID'     },
+    { invoiceNo:'INV-SE-20890', vendorName:'Siemens India', poReference:'PO0000003', grReference:'GR0000004', invoiceDate:'2025-02-02', dueDate:'2025-04-03', baseAmount:127500, taxAmount:22950,  invoiceAmount:150450, status:'APPROVED' },
+    { invoiceNo:'INV-HV-7731',  vendorName:'Havells India', poReference:'PO0000004', grReference:'GR0000005', invoiceDate:'2025-01-30', dueDate:'2025-03-01', baseAmount:36000,  taxAmount:6480,   invoiceAmount:42480,  status:'PAID'     },
+    { invoiceNo:'INV-SE-21001', vendorName:'Siemens India', poReference:'PO0000005', grReference:'GR0000006', invoiceDate:'2025-02-20', dueDate:'2025-04-21', baseAmount:390000, taxAmount:70200,  invoiceAmount:460200, status:'APPROVED' },
+    { invoiceNo:'INV-SE-21045', vendorName:'Siemens India', poReference:'PO0000005', grReference:'GR0000007', invoiceDate:'2025-02-23', dueDate:'2025-04-24', baseAmount:390000, taxAmount:70200,  invoiceAmount:460200, status:'PENDING'  },
+    { invoiceNo:'INV-ML-3390',  vendorName:'Mahindra Logist',poReference:'PO0000006',grReference:'GR0000008', invoiceDate:'2025-02-15', dueDate:'2025-03-17', baseAmount:75000,  taxAmount:13500,  invoiceAmount:88500,  status:'PAID'     },
+  ],
+  vendorPerformance: [
+    { vendorName:'Siemens India',  totalSpend:1715000, totalOrders:3 },
+    { vendorName:'L&T',            totalSpend:1250000, totalOrders:1 },
+    { vendorName:'Tata Steel',     totalSpend:1280000, totalOrders:2 },
+    { vendorName:'Thermax Ltd',    totalSpend:890000,  totalOrders:1 },
+    { vendorName:'Cummins India',  totalSpend:540000,  totalOrders:1 },
+    { vendorName:'Hindustan Zinc', totalSpend:320000,  totalOrders:1 },
+    { vendorName:'Bosch India',    totalSpend:127500,  totalOrders:1 },
+    { vendorName:'SKF India',      totalSpend:268750,  totalOrders:2 },
+  ],
+  monthlySpend: [
+    { fiscalYear:2025, fiscalMonth:1, totalSpend:1194750, poCount:4, label:'Jan' },
+    { fiscalYear:2025, fiscalMonth:2, totalSpend:2732500, poCount:6, label:'Feb' },
+    { fiscalYear:2025, fiscalMonth:3, totalSpend:2620000, poCount:5, label:'Mar' },
+  ],
+  auditLog: [
+    { timestamp:'2025-01-08T10:30:00Z', entityType:'PurchaseRequisition', entityID:'PR0000001', action:'APPROVED',         oldStatus:'PENDING',  newStatus:'APPROVED',  performedBy:'alice@novabuild.com', remarks:'Approved — Q1 steel requirement' },
+    { timestamp:'2025-01-10T09:15:00Z', entityType:'PurchaseOrder',       entityID:'PO0000001', action:'CREATED',          oldStatus:'-',        newStatus:'OPEN',       performedBy:'alice@novabuild.com', remarks:'PO created from PR0000001' },
+    { timestamp:'2025-01-25T14:00:00Z', entityType:'GoodsReceipt',        entityID:'GR0000001', action:'GR_POSTED',        oldStatus:'-',        newStatus:'POSTED',     performedBy:'alice@novabuild.com', remarks:'First delivery — 5000 KG HR coil' },
+    { timestamp:'2025-02-03T11:30:00Z', entityType:'InvoiceVerification', entityID:'INV-SE-20890', action:'INVOICE_APPROVED',oldStatus:'PENDING', newStatus:'APPROVED',  performedBy:'alice@novabuild.com', remarks:'3-way match verified' },
+    { timestamp:'2025-02-21T16:45:00Z', entityType:'PurchaseRequisition', entityID:'PR0000008', action:'REJECTED',         oldStatus:'PENDING',  newStatus:'REJECTED',   performedBy:'alice@novabuild.com', remarks:'Duplicate of PR0000002' },
+    { timestamp:'2025-03-09T09:00:00Z', entityType:'PurchaseOrder',       entityID:'PO0000013', action:'CANCELLED',        oldStatus:'OPEN',     newStatus:'CANCELLED',  performedBy:'alice@novabuild.com', remarks:'Route change — cancelled' },
+  ]
+};
+
+// ─── Utilities ────────────────────────────────────────────────
+const fmt = new Intl.NumberFormat('en-IN', { maximumFractionDigits:0 });
+function fmtCur(v) { return v != null ? '₹' + fmt.format(v) : '—'; }
+function fmtDate(v) { if (!v) return '—'; return new Date(v).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}); }
+function fmtTs(v) { if (!v) return '—'; return new Date(v).toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+
+function badge(status) {
+  const map = {
+    'OPEN':'open','PENDING':'pending','APPROVED':'approved','PAID':'paid',
+    'PARTIALLY_DELIVERED':'partial','FULLY_DELIVERED':'full','INVOICED':'invoiced',
+    'CANCELLED':'cancel','BLOCKED':'blocked','REJECTED':'rejected',
+    'CONVERTED':'convert','POSTED':'approved'
+  };
+  const labels = {
+    'OPEN':'Open','PENDING':'Pending','APPROVED':'Approved','PAID':'Paid',
+    'PARTIALLY_DELIVERED':'Partial Del.','FULLY_DELIVERED':'Full Del.',
+    'INVOICED':'Invoiced','CANCELLED':'Cancelled','BLOCKED':'Blocked',
+    'REJECTED':'Rejected','CONVERTED':'Converted','POSTED':'Posted'
+  };
+  return `<span class="nb-badge nb-badge-${map[status]||'open'}">${labels[status]||status}</span>`;
+}
+
+function showToast(msg, type='info') {
+  const t = document.getElementById('nb-toast');
+  t.textContent = msg;
+  t.className = `nb-toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── Data Loading ─────────────────────────────────────────────
+async function loadAllData() {
+  try {
+    const r = await fetch(`${BASE_URL}/getDashboardKPIs()`, { headers: { Accept:'application/json' } });
+    if (r.ok) {
+      const d = await r.json();
+      APP_DATA.kpis = d.value || d;
+    } else throw new Error('Fallback to mock');
+  } catch { APP_DATA = JSON.parse(JSON.stringify(MOCK)); }
+
+  if (!APP_DATA.purchaseOrders) APP_DATA = JSON.parse(JSON.stringify(MOCK));
+  renderAll();
+}
+
+function refreshData() {
+  showToast('Refreshing…','info');
+  loadAllData();
+}
+
+// ─── Render All ───────────────────────────────────────────────
+function renderAll() {
+  renderKPIs();
+  renderVendorBars();
+  renderApprovalQueue();
+  renderActivityFeed();
+  renderMonthlyChart();
+  renderPOTable();
+  renderPRTable();
+  renderGRTable();
+  renderInvoiceTable();
+  renderSummaryTable();
+  renderDonut();
+  renderOpenPOTracker();
+  renderAuditTable();
+}
+
+// ─── KPIs ─────────────────────────────────────────────────────
+function renderKPIs() {
+  const k = APP_DATA.kpis || MOCK.kpis;
+  document.getElementById('kpi-openPOs').textContent    = k.totalOpenPOs    ?? '—';
+  document.getElementById('kpi-pendingPRs').textContent = k.totalPendingPRs ?? '—';
+  document.getElementById('kpi-spendMTD').textContent   = k.totalSpendMTD   ? fmtCur(k.totalSpendMTD).replace('₹','') : '—';
+  document.getElementById('kpi-pendingInv').textContent = k.pendingInvoices  ?? '—';
+  document.getElementById('kpi-overdue').textContent    = k.overdueDeliveries ?? '—';
+
+  const prs = (APP_DATA.purchaseRequisitions || MOCK.purchaseRequisitions);
+  document.getElementById('flow-pending').textContent = prs.filter(p=>p.status==='PENDING').length;
+  document.getElementById('queue-count').textContent = prs.filter(p=>p.status==='PENDING').length + ' Pending';
+}
+
+// ─── Vendor Spend Bars ────────────────────────────────────────
+function renderVendorBars() {
+  const vendors = (APP_DATA.vendorPerformance || MOCK.vendorPerformance).slice(0, 8);
+  const max = Math.max(...vendors.map(v => v.totalSpend));
+  const el = document.getElementById('vendor-bars');
+  el.innerHTML = vendors.map(v => `
+    <div class="nb-bar-row">
+      <div class="nb-bar-label">${v.vendorName.split(' ').slice(0,2).join(' ')}</div>
+      <div class="nb-bar-track">
+        <div class="nb-bar-fill" style="width:${(v.totalSpend/max*100).toFixed(1)}%"></div>
+      </div>
+      <div class="nb-bar-val">${(v.totalSpend/100000).toFixed(1)}L</div>
+    </div>`).join('');
+}
+
+// ─── Approval Queue ───────────────────────────────────────────
+function renderApprovalQueue() {
+  const prs = (APP_DATA.purchaseRequisitions || MOCK.purchaseRequisitions).filter(p => p.status === 'PENDING');
+  const el = document.getElementById('approval-queue');
+  if (!prs.length) { el.innerHTML = '<div class="nb-empty">No pending approvals ✓</div>'; return; }
+  el.innerHTML = prs.map(pr => `
+    <div class="nb-queue-item">
+      <div class="nb-queue-avatar">${pr.requestedBy.replace('EMP','E')}</div>
+      <div class="nb-queue-info">
+        <div class="nb-queue-pr">${pr.prNumber} — ${pr.title}</div>
+        <div class="nb-queue-meta">${pr.plant} · ${fmtCur(pr.totalValue)} · ${fmtDate(pr.requestedDate)}</div>
+      </div>
+      <div class="nb-queue-actions">
+        ${currentUser === 'alice' ? `
+          <button class="nb-btn nb-btn-primary" style="font-size:0.6rem;padding:0.3rem 0.6rem" onclick="openApprove('${pr.prNumber}')">✓</button>
+          <button class="nb-btn nb-btn-danger"  style="font-size:0.6rem;padding:0.3rem 0.6rem" onclick="openReject('${pr.prNumber}')">✕</button>
+        ` : '<span style="font-size:0.62rem;color:#7d8590">Viewer</span>'}
+      </div>
+    </div>`).join('');
+}
+
+// ─── Activity Feed ────────────────────────────────────────────
+function renderActivityFeed() {
+  const logs = (APP_DATA.auditLog || MOCK.auditLog).slice(0, 5);
+  const colors = { APPROVED:'#3fb950', REJECTED:'#f85149', CANCELLED:'#f85149', CREATED:'#388bfd', GR_POSTED:'#d4a017', INVOICE_APPROVED:'#3fb950' };
+  const el = document.getElementById('activity-feed');
+  el.innerHTML = logs.map(l => `
+    <div class="nb-activity-item">
+      <div class="nb-activity-dot" style="background:${colors[l.action]||'#7d8590'}"></div>
+      <div>
+        <div class="nb-activity-text"><strong>${l.entityID}</strong> — ${l.action.replace(/_/g,' ')}</div>
+        <div class="nb-activity-time">${fmtTs(l.timestamp)} · ${l.performedBy.split('@')[0]}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ─── Monthly Chart ────────────────────────────────────────────
+function renderMonthlyChart() {
+  const months = APP_DATA.monthlySpend || MOCK.monthlySpend;
+  const maxS = Math.max(...months.map(m => m.totalSpend));
+  const el = document.getElementById('monthly-chart');
+  const COLORS = ['#d4a017','#f0b429','#388bfd','#3fb950','#8ab4f8','#bc8cff'];
+  el.innerHTML = months.map((m, i) => {
+    const h = Math.max(12, (m.totalSpend / maxS) * 100);
+    const label = m.label || ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][(m.fiscalMonth||1)-1];
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:default" title="${fmtCur(m.totalSpend)} · ${m.poCount} POs">
+      <div style="font-size:0.65rem;color:#8b949e">${(m.totalSpend/100000).toFixed(0)}L</div>
+      <div style="width:100%;background:${COLORS[i%COLORS.length]};height:${h}px;border-radius:2px 2px 0 0;opacity:0.85;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.85"></div>
+      <div style="font-size:0.7rem;color:#7d8590;letter-spacing:0.08em">${label}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── PO Table ────────────────────────────────────────────────
+function renderPOTable(data) {
+  const pos = data || APP_DATA.purchaseOrders || MOCK.purchaseOrders;
+  const tbody = document.getElementById('po-tbody');
+  document.getElementById('po-count').textContent = pos.length + ' Records';
+  tbody.innerHTML = pos.map(po => `<tr>
+    <td class="mono" style="color:#388bfd">${po.poNumber}</td>
+    <td class="mono" style="color:#7d8590">${po.prReference||'—'}</td>
+    <td>${po.vendorName}</td>
+    <td><span style="font-size:0.65rem;background:#161b22;border:1px solid #30363d;border-radius:3px;padding:1px 6px">${po.plant}</span></td>
+    <td>${po.purchGroup||'—'}</td>
+    <td>${fmtDate(po.docDate)}</td>
+    <td>${fmtDate(po.deliveryDate)}</td>
+    <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(po.totalValue)}</td>
+    <td style="text-align:right;color:#7d8590;font-family:'DM Mono',monospace">${fmtCur(po.taxAmount)}</td>
+    <td>${badge(po.status)}</td>
+    <td>
+      ${po.status==='OPEN'&&currentUser==='alice' ? `<button class="nb-btn nb-btn-ghost" style="font-size:0.62rem;padding:0.25rem 0.6rem" onclick="cancelPO('${po.poNumber}')">Cancel</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+// ─── PR Table ─────────────────────────────────────────────────
+function renderPRTable(data) {
+  const prs = data || APP_DATA.purchaseRequisitions || MOCK.purchaseRequisitions;
+  const tbody = document.getElementById('pr-tbody');
+  document.getElementById('pr-count').textContent = prs.length + ' Records';
+  tbody.innerHTML = prs.map(pr => `<tr>
+    <td class="mono" style="color:#388bfd">${pr.prNumber}</td>
+    <td>${pr.title}</td>
+    <td>${pr.requestedBy}</td>
+    <td><span style="font-size:0.65rem;background:#161b22;border:1px solid #30363d;border-radius:3px;padding:1px 6px">${pr.plant}</span></td>
+    <td>${pr.costCenter||'—'}</td>
+    <td>${fmtDate(pr.requestedDate)}</td>
+    <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(pr.totalValue)}</td>
+    <td>${badge(pr.status)}</td>
+    <td style="display:flex;gap:4px">
+      ${pr.status==='PENDING'&&currentUser==='alice' ? `
+        <button class="nb-btn nb-btn-primary" style="font-size:0.62rem;padding:0.25rem 0.6rem" onclick="openApprove('${pr.prNumber}')">Approve</button>
+        <button class="nb-btn nb-btn-danger"  style="font-size:0.62rem;padding:0.25rem 0.6rem" onclick="openReject('${pr.prNumber}')">Reject</button>
+      ` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+// ─── GR Table ─────────────────────────────────────────────────
+function renderGRTable() {
+  const grs = APP_DATA.goodsReceipts || MOCK.goodsReceipts;
+  const tbody = document.getElementById('gr-tbody');
+  tbody.innerHTML = grs.map(gr => `<tr>
+    <td class="mono" style="color:#388bfd">${gr.grNumber}</td>
+    <td class="mono">${gr.poReference}</td>
+    <td>${gr.vendorName}</td>
+    <td><span style="font-size:0.65rem;background:#161b22;border:1px solid #30363d;border-radius:3px;padding:1px 6px">${gr.plant}</span></td>
+    <td>${fmtDate(gr.postingDate)}</td>
+    <td><span class="nb-badge nb-badge-open">${gr.movementType}</span></td>
+    <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(gr.totalValue)}</td>
+    <td style="color:#7d8590;font-size:0.7rem">${gr.deliveryNote||'—'}</td>
+    <td>${badge(gr.status)}</td>
+  </tr>`).join('');
+}
+
+// ─── Invoice Table ────────────────────────────────────────────
+function renderInvoiceTable() {
+  const invs = APP_DATA.invoices || MOCK.invoices;
+  const tbody = document.getElementById('inv-tbody');
+  tbody.innerHTML = invs.map(inv => `<tr>
+    <td class="mono" style="color:#388bfd">${inv.invoiceNo}</td>
+    <td>${inv.vendorName}</td>
+    <td class="mono">${inv.poReference}</td>
+    <td class="mono" style="color:#7d8590">${inv.grReference}</td>
+    <td>${fmtDate(inv.invoiceDate)}</td>
+    <td>${fmtDate(inv.dueDate)}</td>
+    <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(inv.baseAmount)}</td>
+    <td style="text-align:right;color:#7d8590;font-family:'DM Mono',monospace">${fmtCur(inv.taxAmount)}</td>
+    <td style="text-align:right;font-family:'DM Mono',monospace;color:#f0b429">${fmtCur(inv.invoiceAmount)}</td>
+    <td>${badge(inv.status)}</td>
+    <td>
+      ${inv.status==='PENDING'&&currentUser==='alice' ? `
+        <button class="nb-btn nb-btn-primary" style="font-size:0.62rem;padding:0.25rem 0.6rem" onclick="approveInvoice('${inv.invoiceNo}')">Approve</button>
+        <button class="nb-btn nb-btn-danger" style="font-size:0.62rem;padding:0.25rem 0.6rem" onclick="blockInvoice('${inv.invoiceNo}')">Block</button>
+      ` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+// ─── P2P Summary Table ────────────────────────────────────────
+function renderSummaryTable() {
+  const pos = APP_DATA.purchaseOrders || MOCK.purchaseOrders;
+  const grs = APP_DATA.goodsReceipts || MOCK.goodsReceipts;
+  const invs = APP_DATA.invoices || MOCK.invoices;
+  const tbody = document.getElementById('summary-tbody');
+  tbody.innerHTML = pos.slice(0,10).map(po => {
+    const poGRs = grs.filter(g => g.poReference === po.poNumber);
+    const poInvs = invs.filter(i => i.poReference === po.poNumber);
+    const received = poGRs.reduce((s,g) => s + (g.totalValue||0), 0);
+    const invoiced = poInvs.reduce((s,i) => s + (i.invoiceAmount||0), 0);
+    const open = po.totalValue - invoiced;
+    const openColor = open > 0 ? '#f0b429' : (open < 0 ? '#f85149' : '#3fb950');
+    return `<tr>
+      <td class="mono" style="color:#388bfd">${po.poNumber}</td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${po.vendorName}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(po.totalValue)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;color:#3fb950">${received ? fmtCur(received) : '—'}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;color:#388bfd">${invoiced ? fmtCur(invoiced) : '—'}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace;color:${openColor}">${fmtCur(Math.abs(open))}</td>
+      <td>${badge(po.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Donut Chart ──────────────────────────────────────────────
+function renderDonut() {
+  const vendors = (APP_DATA.vendorPerformance || MOCK.vendorPerformance).slice(0, 8);
+  const total = vendors.reduce((s,v) => s + v.totalSpend, 0);
+  const COLORS = ['#d4a017','#388bfd','#3fb950','#f85149','#f0b429','#bc8cff','#8ab4f8','#3fb97a'];
+  let offset = 0;
+  const cx=70, cy=70, r=52, thick=18;
+  const svg = document.getElementById('donut-svg');
+  const leg = document.getElementById('donut-legend');
+  const slices = vendors.map((v,i) => {
+    const pct = v.totalSpend / total;
+    const arc = pct * 2 * Math.PI;
+    const x1 = cx + r * Math.sin(offset);
+    const y1 = cy - r * Math.cos(offset);
+    offset += arc;
+    const x2 = cx + r * Math.sin(offset);
+    const y2 = cy - r * Math.cos(offset);
+    const large = arc > Math.PI ? 1 : 0;
+    const ri = r - thick;
+    const ix1 = cx + ri * Math.sin(offset);
+    const iy1 = cy - ri * Math.cos(offset);
+    offset -= arc;
+    const ix2 = cx + ri * Math.sin(offset);
+    const iy2 = cy - ri * Math.cos(offset);
+    const path = `M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${ix1},${iy1} A${ri},${ri} 0 ${large},0 ${ix2},${iy2} Z`;
+    offset += arc;
+    return { path, color: COLORS[i], pct, name: v.vendorName };
+  });
+  svg.innerHTML = slices.map((s,i) =>
+    `<path d="${s.path}" fill="${s.color}" opacity="0.85" style="cursor:default;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.85">
+      <title>${s.name}: ${(s.pct*100).toFixed(1)}%</title>
+    </path>`
+  ).join('') +
+  `<text x="${cx}" y="${cy-6}" text-anchor="middle" font-family="'Bebas Neue',sans-serif" font-size="14" fill="#e6edf3">${(total/1000000).toFixed(1)}M</text>
+   <text x="${cx}" y="${cy+12}" text-anchor="middle" font-family="'DM Mono',monospace" font-size="8" fill="#7d8590">TOTAL SPEND</text>`;
+  leg.innerHTML = slices.map(s =>
+    `<div class="nb-legend-row">
+      <div class="nb-legend-dot" style="background:${s.color}"></div>
+      <div class="nb-legend-name">${s.name.split(' ').slice(0,2).join(' ')}</div>
+      <div class="nb-legend-pct">${(s.pct*100).toFixed(0)}%</div>
+    </div>`
+  ).join('');
+}
+
+// ─── Open PO Tracker ─────────────────────────────────────────
+function renderOpenPOTracker() {
+  const today = new Date('2025-04-20');
+  const pos = (APP_DATA.purchaseOrders || MOCK.purchaseOrders)
+    .filter(p => !['CLOSED','CANCELLED','INVOICED'].includes(p.status));
+  let overdueCount = 0;
+  const tbody = document.getElementById('open-po-tbody');
+  tbody.innerHTML = pos.map(po => {
+    const isOverdue = po.deliveryDate &&
+      new Date(po.deliveryDate) < today &&
+      !['FULLY_DELIVERED','CLOSED','CANCELLED','INVOICED'].includes(po.status);
+    if (isOverdue) overdueCount++;
+    return `<tr>
+      <td class="mono" style="color:#388bfd">${po.poNumber}</td>
+      <td>${po.vendorName}</td>
+      <td>${po.plant}</td>
+      <td>${fmtDate(po.docDate)}</td>
+      <td style="color:${isOverdue?'#f85149':'#e6edf3'}">${fmtDate(po.deliveryDate)}</td>
+      <td style="text-align:right;font-family:'DM Mono',monospace">${fmtCur(po.totalValue)}</td>
+      <td>${badge(po.status)}</td>
+      <td>${isOverdue ? '<span class="nb-badge nb-badge-cancel">⚠ Overdue</span>' : '<span style="color:#3fb950;font-size:0.7rem">On Track</span>'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('overdue-badge').textContent = overdueCount + ' Overdue';
+  document.getElementById('kpi-overdue').textContent = overdueCount;
+}
+
+// ─── Audit Table ──────────────────────────────────────────────
+function renderAuditTable() {
+  const logs = APP_DATA.auditLog || MOCK.auditLog;
+  const tbody = document.getElementById('audit-tbody');
+  const actionColors = { APPROVED:'#3fb950', REJECTED:'#f85149', CANCELLED:'#f85149',
+    CREATED:'#388bfd', GR_POSTED:'#d4a017', INVOICE_APPROVED:'#3fb950', INVOICE_BLOCKED:'#f85149' };
+  tbody.innerHTML = logs.map(l => `<tr>
+    <td style="color:#7d8590;font-size:0.7rem">${fmtTs(l.timestamp)}</td>
+    <td><span class="nb-badge nb-badge-open">${l.entityType}</span></td>
+    <td class="mono" style="color:#388bfd">${l.entityID}</td>
+    <td style="color:${actionColors[l.action]||'#e6edf3'};font-size:0.7rem;font-weight:600;letter-spacing:0.06em">${l.action}</td>
+    <td>${l.oldStatus ? badge(l.oldStatus) : '<span style="color:#7d8590">—</span>'}</td>
+    <td>${l.newStatus ? badge(l.newStatus) : '<span style="color:#7d8590">—</span>'}</td>
+    <td style="color:#7d8590">${l.performedBy}</td>
+    <td style="color:#7d8590;font-size:0.7rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.remarks||'—'}</td>
+  </tr>`).join('');
+}
+
+// ─── Filtering ───────────────────────────────────────────────
+function filterTable(tableId, searchId, plantId, statusId) {
+  const search = (document.getElementById(searchId)?.value||'').toLowerCase();
+  const plant  = document.getElementById(plantId)?.value||'';
+  const status = document.getElementById(statusId)?.value||'';
+  const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+  rows.forEach(row => {
+    const txt = row.textContent.toLowerCase();
+    const plantMatch  = !plant  || txt.includes(plant.toLowerCase());
+    const statusMatch = !status || txt.includes(status.toLowerCase().replace(/_/g,' '));
+    const searchMatch = !search || txt.includes(search);
+    row.style.display = (plantMatch && statusMatch && searchMatch) ? '' : 'none';
+  });
+}
+
+// ─── Tab Navigation ───────────────────────────────────────────
+function showTab(tab, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nb-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// ─── User Switch ──────────────────────────────────────────────
+function switchUser(user) {
+  currentUser = user;
+  document.getElementById('currentUser').textContent = user + '@novabuild';
+  showToast(`Switched to ${user} (${user==='alice'?'P2PApprover':'P2PViewer'})`, 'info');
+  renderApprovalQueue();
+  renderPRTable();
+  renderInvoiceTable();
+  renderPOTable();
+}
+
+// ─── Modal Actions ────────────────────────────────────────────
+function openApprove(prNum) {
+  document.getElementById('modal-pr-id').value = prNum;
+  document.getElementById('modal-approve-remarks').value = '';
+  document.getElementById('modal-approve').classList.add('open');
+}
+
+function openReject(prNum) {
+  document.getElementById('modal-reject-id').value = prNum;
+  document.getElementById('modal-reject-reason').value = '';
+  document.getElementById('modal-reject').classList.add('open');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function submitApproval() {
+  const prNum = document.getElementById('modal-pr-id').value;
+  const remarks = document.getElementById('modal-approve-remarks').value || 'Approved';
+  closeModal('modal-approve');
+  // Update local state
+  const prs = APP_DATA.purchaseRequisitions || MOCK.purchaseRequisitions;
+  const pr = prs.find(p => p.prNumber === prNum);
+  if (pr) pr.status = 'APPROVED';
+  APP_DATA.kpis.totalPendingPRs = Math.max(0, (APP_DATA.kpis.totalPendingPRs||1) - 1);
+  // Audit log
+  const logs = APP_DATA.auditLog || [];
+  logs.unshift({ timestamp: new Date().toISOString(), entityType:'PurchaseRequisition',
+    entityID: prNum, action:'APPROVED', oldStatus:'PENDING', newStatus:'APPROVED',
+    performedBy: currentUser + '@novabuild.com', remarks });
+  APP_DATA.auditLog = logs;
+  renderAll();
+  showToast(`PR ${prNum} approved successfully`, 'success');
+}
+
+function submitRejection() {
+  const prNum = document.getElementById('modal-reject-id').value;
+  const reason = document.getElementById('modal-reject-reason').value;
+  if (!reason || reason.trim().length < 5) {
+    showToast('Rejection reason must be at least 5 characters', 'error'); return;
+  }
+  closeModal('modal-reject');
+  const prs = APP_DATA.purchaseRequisitions || MOCK.purchaseRequisitions;
+  const pr = prs.find(p => p.prNumber === prNum);
+  if (pr) { pr.status = 'REJECTED'; pr.remarks = reason; }
+  APP_DATA.kpis.totalPendingPRs = Math.max(0, (APP_DATA.kpis.totalPendingPRs||1) - 1);
+  const logs = APP_DATA.auditLog || [];
+  logs.unshift({ timestamp: new Date().toISOString(), entityType:'PurchaseRequisition',
+    entityID: prNum, action:'REJECTED', oldStatus:'PENDING', newStatus:'REJECTED',
+    performedBy: currentUser + '@novabuild.com', remarks: reason });
+  APP_DATA.auditLog = logs;
+  renderAll();
+  showToast(`PR ${prNum} rejected`, 'error');
+}
+
+function approveInvoice(invNo) {
+  const invs = APP_DATA.invoices || MOCK.invoices;
+  const inv = invs.find(i => i.invoiceNo === invNo);
+  if (inv) inv.status = 'APPROVED';
+  APP_DATA.kpis.pendingInvoices = Math.max(0, (APP_DATA.kpis.pendingInvoices||1) - 1);
+  renderAll();
+  showToast(`Invoice ${invNo} approved`, 'success');
+}
+
+function blockInvoice(invNo) {
+  const reason = prompt('Block reason (min 5 chars):');
+  if (!reason || reason.trim().length < 5) { showToast('Reason too short', 'error'); return; }
+  const invs = APP_DATA.invoices || MOCK.invoices;
+  const inv = invs.find(i => i.invoiceNo === invNo);
+  if (inv) { inv.status = 'BLOCKED'; inv.remarks = reason; }
+  renderAll();
+  showToast(`Invoice ${invNo} blocked`, 'error');
+}
+
+function cancelPO(poNum) {
+  const reason = prompt('Cancel reason:');
+  if (!reason) return;
+  const pos = APP_DATA.purchaseOrders || MOCK.purchaseOrders;
+  const po = pos.find(p => p.poNumber === poNum);
+  if (po) po.status = 'CANCELLED';
+  renderAll();
+  showToast(`PO ${poNum} cancelled`, 'info');
+}
+
+function openCreatePO() { showToast('Open OData endpoint: POST /p2p/PurchaseOrders', 'info'); }
+function openCreatePR() { showToast('Open OData endpoint: POST /p2p/PurchaseRequisitions', 'info'); }
+
+// ─── Init ──────────────────────────────────────────────────────
+APP_DATA = JSON.parse(JSON.stringify(MOCK));
+renderAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,343 @@
+### ============================================================
+### NovaBuild P2P Analytics — REST Client Test Suite
+### File: test/tests.http
+### Usage: Install VS Code REST Client extension, then click
+###        "Send Request" above each request
+### ============================================================
+
+@baseUrl = http://localhost:4004/p2p
+@contentType = application/json
+
+### ── Auth headers (development mock users) ──────────────────
+# Use alice (P2PApprover) for write operations
+@authAlice = Basic YWxpY2U6
+# Use bob (P2PViewer) for read operations
+@authBob = Basic Ym9iOg==
+
+# =============================================================
+# METADATA & SERVICE DOCUMENT
+# =============================================================
+
+### 1. Service document
+GET {{baseUrl}}/
+Authorization: {{authBob}}
+
+###
+
+### 2. OData metadata
+GET {{baseUrl}}/$metadata
+Authorization: {{authBob}}
+
+# =============================================================
+# VENDORS
+# =============================================================
+
+### 3. Get all vendors
+GET {{baseUrl}}/Vendors
+Authorization: {{authBob}}
+
+###
+
+### 4. Get specific vendor
+GET {{baseUrl}}/Vendors('V001')
+Authorization: {{authBob}}
+
+###
+
+### 5. Get vendor with expand (purchase orders)
+GET {{baseUrl}}/Vendors?$expand=purchaseOrders&$filter=isActive eq true
+Authorization: {{authBob}}
+
+# =============================================================
+# PURCHASE REQUISITIONS
+# =============================================================
+
+### 6. Get all PRs
+GET {{baseUrl}}/PurchaseRequisitions
+Authorization: {{authBob}}
+
+###
+
+### 7. Get PENDING PRs (approval queue)
+GET {{baseUrl}}/PurchaseRequisitions?$filter=status eq 'PENDING'&$orderby=requestedDate asc
+Authorization: {{authBob}}
+
+###
+
+### 8. Create a new PR
+POST {{baseUrl}}/PurchaseRequisitions
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Q2 Copper Wire Procurement",
+  "requestedBy": "EMP001",
+  "requestedDate": "2025-04-20",
+  "plant": "NB10",
+  "costCenter": "CC100",
+  "totalValue": 390000.00,
+  "currency_code": "INR",
+  "remarks": "Urgent requirement for Q2 production"
+}
+
+###
+
+### 9. Approve a PR (replace PR_ID with actual ID from GET response)
+POST {{baseUrl}}/PurchaseRequisitions(prNumber='PR0000006',IsActiveEntity=true)/P2PAnalyticsService.approvePR
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "remarks": "Budget approved — proceed with sourcing"
+}
+
+###
+
+### 10. Reject a PR
+POST {{baseUrl}}/PurchaseRequisitions(prNumber='PR0000009',IsActiveEntity=true)/P2PAnalyticsService.rejectPR
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Duplicate request — covered by existing PO0000018"
+}
+
+# =============================================================
+# PURCHASE ORDERS
+# =============================================================
+
+### 11. Get all POs
+GET {{baseUrl}}/PurchaseOrders
+Authorization: {{authBob}}
+
+###
+
+### 12. Get OPEN POs for plant NB10
+GET {{baseUrl}}/PurchaseOrders?$filter=status eq 'OPEN' and plant eq 'NB10'&$orderby=docDate desc
+Authorization: {{authBob}}
+
+###
+
+### 13. Get PO with expand items and vendor
+GET {{baseUrl}}/PurchaseOrders('PO0000007')?$expand=items,vendor
+Authorization: {{authBob}}
+
+###
+
+### 14. Create a new PO
+POST {{baseUrl}}/PurchaseOrders
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "prReference": "PR0000006",
+  "vendor_vendorID": "V007",
+  "plant": "NB10",
+  "purchOrg": "NBPO",
+  "purchGroup": "PG1",
+  "docDate": "2025-04-20",
+  "deliveryDate": "2025-05-15",
+  "paymentTerms": "NT60",
+  "totalValue": 300000.00,
+  "taxAmount": 54000.00,
+  "currency_code": "INR",
+  "remarks": "AMC renewal - Thermax equipment"
+}
+
+###
+
+### 15. Cancel a PO
+POST {{baseUrl}}/PurchaseOrders(poNumber='PO0000013',IsActiveEntity=true)/P2PAnalyticsService.cancelPO
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Vendor not available — alternate sourcing in progress"
+}
+
+###
+
+### 16. Custom function — get open POs by plant
+GET {{baseUrl}}/getOpenPOs(plant='NB10',purchGroup=null)
+Authorization: {{authBob}}
+
+# =============================================================
+# GOODS RECEIPTS
+# =============================================================
+
+### 17. Get all GRs
+GET {{baseUrl}}/GoodsReceipts
+Authorization: {{authBob}}
+
+###
+
+### 18. Get GRs for a specific PO
+GET {{baseUrl}}/GoodsReceipts?$filter=poReference eq 'PO0000001'
+Authorization: {{authBob}}
+
+###
+
+### 19. Post a new GR
+POST {{baseUrl}}/GoodsReceipts
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "poReference": "PO0000007",
+  "vendor_vendorID": "V006",
+  "plant": "NB10",
+  "postingDate": "2025-04-20",
+  "documentDate": "2025-04-19",
+  "movementType": "101",
+  "totalValue": 270000.00,
+  "currency_code": "INR",
+  "deliveryNote": "DN-CM-20250420",
+  "remarks": "Second batch - Cummins components"
+}
+
+# =============================================================
+# INVOICE VERIFICATION
+# =============================================================
+
+### 20. Get all invoices
+GET {{baseUrl}}/InvoiceVerifications
+Authorization: {{authBob}}
+
+###
+
+### 21. Get PENDING invoices
+GET {{baseUrl}}/InvoiceVerifications?$filter=status eq 'PENDING'
+Authorization: {{authBob}}
+
+###
+
+### 22. Create vendor invoice
+POST {{baseUrl}}/InvoiceVerifications
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "vendor_vendorID": "V006",
+  "poReference": "PO0000007",
+  "grReference": "GR0000010",
+  "invoiceDate": "2025-04-18",
+  "postingDate": "2025-04-20",
+  "baseAmount": 270000.00,
+  "taxAmount": 48600.00,
+  "invoiceAmount": 318600.00,
+  "currency_code": "INR",
+  "remarks": "Invoice for partial delivery - batch 1"
+}
+
+###
+
+### 23. Approve an invoice
+POST {{baseUrl}}/InvoiceVerifications(invoiceNo='INV-SE-21045',IsActiveEntity=true)/P2PAnalyticsService.approveInvoice
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "remarks": "3-way match verified — approved for payment"
+}
+
+###
+
+### 24. Block an invoice
+POST {{baseUrl}}/InvoiceVerifications(invoiceNo='INV-SE-21045',IsActiveEntity=true)/P2PAnalyticsService.blockInvoice
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Quantity mismatch — GR shows 480 KG, invoice claims 500 KG"
+}
+
+# =============================================================
+# ANALYTICS VIEWS
+# =============================================================
+
+### 25. P2P Summary View
+GET {{baseUrl}}/P2PSummaryView
+Authorization: {{authBob}}
+
+###
+
+### 26. Monthly Spend Analytics
+GET {{baseUrl}}/MonthlySpendView?$orderby=fiscalYear desc,fiscalMonth desc
+Authorization: {{authBob}}
+
+###
+
+### 27. Open PO Tracker
+GET {{baseUrl}}/OpenPOTrackerView?$filter=isOverdue eq true
+Authorization: {{authBob}}
+
+###
+
+### 28. Vendor Performance
+GET {{baseUrl}}/VendorPerformanceView?$orderby=totalSpend desc&$top=5
+Authorization: {{authBob}}
+
+###
+
+### 29. PR to PO Conversion View
+GET {{baseUrl}}/PRtoPoConversionView?$filter=agingDays gt 7
+Authorization: {{authBob}}
+
+# =============================================================
+# CUSTOM FUNCTIONS
+# =============================================================
+
+### 30. Dashboard KPIs
+GET {{baseUrl}}/getDashboardKPIs()
+Authorization: {{authBob}}
+
+###
+
+### 31. Approval queue (approver only)
+GET {{baseUrl}}/getApprovalQueue()
+Authorization: {{authAlice}}
+
+###
+
+### 32. Open POs by plant and group
+GET {{baseUrl}}/getOpenPOs(plant='NB20',purchGroup=null)
+Authorization: {{authBob}}
+
+# =============================================================
+# AUDIT LOG
+# =============================================================
+
+### 33. Get all audit entries
+GET {{baseUrl}}/AuditLog?$orderby=timestamp desc&$top=20
+Authorization: {{authBob}}
+
+###
+
+### 34. Audit log for a specific entity
+GET {{baseUrl}}/AuditLog?$filter=entityType eq 'PurchaseRequisition'&$orderby=timestamp desc
+Authorization: {{authBob}}
+
+# =============================================================
+# ERROR SCENARIO TESTS
+# =============================================================
+
+### 35. Unauthorized (carol has no roles)
+GET {{baseUrl}}/PurchaseOrders
+Authorization: Basic Y2Fyb2w6
+
+###
+
+### 36. GET non-existent PO — expect 404
+GET {{baseUrl}}/PurchaseOrders('PO9999999')
+Authorization: {{authBob}}
+
+###
+
+### 37. Approve already-approved PR — expect 409
+POST {{baseUrl}}/PurchaseRequisitions(prNumber='PR0000001',IsActiveEntity=true)/P2PAnalyticsService.approvePR
+Authorization: {{authAlice}}
+Content-Type: {{contentType}}
+
+{
+  "remarks": "Should return 409 error"
+}

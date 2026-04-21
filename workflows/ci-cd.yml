@@ -1,0 +1,393 @@
+# =============================================================================
+# NovaBuild P2P Analytics — CI/CD Pipeline
+# GitHub Actions Workflow
+# Stages: Lint → Test → Build → Deploy (BTP Cloud Foundry)
+# =============================================================================
+
+name: P2P Analytics CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      deploy_env:
+        description: 'Deployment environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+# ---------------------------------------------------------------------------
+# Global environment variables
+# ---------------------------------------------------------------------------
+env:
+  NODE_VERSION: '20'
+  CF_API_URL:   ${{ vars.CF_API_URL || 'https://api.cf.us10.hana.ondemand.com' }}
+  CF_ORG:       ${{ vars.CF_ORG }}
+  CF_SPACE_DEV: 'development'
+  CF_SPACE_STG: 'staging'
+  CF_SPACE_PRD: 'production'
+
+# ---------------------------------------------------------------------------
+# Cancel redundant runs
+# ---------------------------------------------------------------------------
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ===========================================================================
+  # JOB 1: LINT — Code Quality Checks
+  # ===========================================================================
+  lint:
+    name: '🔍 Lint & Code Quality'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint -- --format=compact
+        continue-on-error: false
+
+      - name: Check for hardcoded secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true   # warn only — don't block
+
+  # ===========================================================================
+  # JOB 2: UNIT TESTS — Jest test suite
+  # ===========================================================================
+  test:
+    name: '🧪 Unit & Integration Tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+
+    strategy:
+      matrix:
+        node-version: ['20', '22']   # Test on multiple Node versions
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install SAP CDS globally
+        run: npm install -g @sap/cds-dk
+
+      - name: Run test suite with coverage
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          CDS_ENV: test
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          flags: unittests
+          name: novabuild-p2p-coverage
+        continue-on-error: true
+
+      - name: Upload test results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-node${{ matrix.node-version }}
+          path: |
+            coverage/
+            junit.xml
+          retention-days: 30
+
+  # ===========================================================================
+  # JOB 3: BUILD — CDS Production Build + MTA Archive
+  # ===========================================================================
+  build:
+    name: '🏗️ Build MTA Archive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install SAP CDS globally
+        run: npm install -g @sap/cds-dk
+
+      - name: Install MTA Build Tool
+        run: npm install -g mbt
+
+      - name: CDS Production Build
+        run: cds build --production
+        env:
+          NODE_ENV: production
+
+      - name: Build MTA Archive (.mtar)
+        run: mbt build -t mta_archives/
+        env:
+          NODE_ENV: production
+
+      - name: Verify MTA archive was created
+        run: |
+          ls -la mta_archives/
+          echo "MTA archive size: $(du -sh mta_archives/*.mtar | cut -f1)"
+
+      - name: Upload MTA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mta-archive-${{ github.sha }}
+          path: mta_archives/*.mtar
+          retention-days: 90
+
+  # ===========================================================================
+  # JOB 4a: DEPLOY TO DEVELOPMENT (auto on develop branch push)
+  # ===========================================================================
+  deploy-dev:
+    name: '🚀 Deploy → Development'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: development
+      url: ${{ vars.DEV_APP_URL }}
+
+    steps:
+      - name: Download MTA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mta-archive-${{ github.sha }}
+          path: mta_archives/
+
+      - name: Install CF CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx
+          mv cf8 /usr/local/bin/cf
+          cf version
+
+      - name: CF Login (Development)
+        run: |
+          cf login \
+            -a ${{ env.CF_API_URL }} \
+            -u ${{ secrets.CF_USERNAME }} \
+            -p ${{ secrets.CF_PASSWORD }} \
+            -o ${{ env.CF_ORG }} \
+            -s ${{ env.CF_SPACE_DEV }}
+
+      - name: Deploy to Development
+        run: |
+          cf deploy mta_archives/*.mtar \
+            --strategy blue-green \
+            --skip-testing-phase \
+            -f
+
+      - name: Smoke Test — Health Check
+        run: |
+          sleep 30
+          APP_URL="${{ vars.DEV_APP_URL }}"
+          echo "Testing health endpoint: $APP_URL/health"
+          curl -f "$APP_URL/health" || exit 1
+          echo "Testing OData metadata..."
+          curl -f "$APP_URL/p2p/\$metadata" || exit 1
+          echo "✅ Smoke test passed"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Development deployment failed. Check CF logs."
+
+  # ===========================================================================
+  # JOB 4b: DEPLOY TO STAGING (manual approval required)
+  # ===========================================================================
+  deploy-staging:
+    name: '🚀 Deploy → Staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: ${{ vars.STG_APP_URL }}
+
+    steps:
+      - name: Download MTA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mta-archive-${{ github.sha }}
+          path: mta_archives/
+
+      - name: Install CF CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx
+          mv cf8 /usr/local/bin/cf
+
+      - name: CF Login (Staging)
+        run: |
+          cf login \
+            -a ${{ env.CF_API_URL }} \
+            -u ${{ secrets.CF_USERNAME }} \
+            -p ${{ secrets.CF_PASSWORD }} \
+            -o ${{ env.CF_ORG }} \
+            -s ${{ env.CF_SPACE_STG }}
+
+      - name: Deploy to Staging
+        run: cf deploy mta_archives/*.mtar --strategy blue-green -f
+
+      - name: Run Integration Tests against Staging
+        run: |
+          STG_URL="${{ vars.STG_APP_URL }}"
+          echo "Running integration test against staging..."
+          curl -f "$STG_URL/health" && echo "✅ Health check passed"
+          curl -f "$STG_URL/p2p/\$metadata" && echo "✅ OData metadata accessible"
+          curl -f "$STG_URL/p2p/getDashboardKPIs()" -H "Authorization: Bearer ${{ secrets.STG_TEST_TOKEN }}" && echo "✅ API test passed"
+
+  # ===========================================================================
+  # JOB 4c: DEPLOY TO PRODUCTION (requires manual approval via GitHub Env)
+  # ===========================================================================
+  deploy-production:
+    name: '🚀 Deploy → Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: deploy-staging
+    environment:
+      name: production
+      url: ${{ vars.PRD_APP_URL }}
+
+    steps:
+      - name: Download MTA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mta-archive-${{ github.sha }}
+          path: mta_archives/
+
+      - name: Install CF CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx
+          mv cf8 /usr/local/bin/cf
+
+      - name: CF Login (Production)
+        run: |
+          cf login \
+            -a ${{ env.CF_API_URL }} \
+            -u ${{ secrets.CF_USERNAME_PRD }} \
+            -p ${{ secrets.CF_PASSWORD_PRD }} \
+            -o ${{ env.CF_ORG }} \
+            -s ${{ env.CF_SPACE_PRD }}
+
+      - name: Deploy to Production (Blue-Green)
+        run: cf deploy mta_archives/*.mtar --strategy blue-green -f
+
+      - name: Production Health Check
+        run: |
+          PRD_URL="${{ vars.PRD_APP_URL }}"
+          for i in 1 2 3; do
+            if curl -f "$PRD_URL/health"; then
+              echo "✅ Health check passed on attempt $i"
+              break
+            fi
+            echo "Attempt $i failed, retrying in 30s..."
+            sleep 30
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "Release v${{ github.run_number }}"
+          body: |
+            ## NovaBuild P2P Analytics — Production Release
+            - **Build**: ${{ github.run_number }}
+            - **Commit**: ${{ github.sha }}
+            - **Deployed by**: ${{ github.actor }}
+            - **Environment**: Production (SAP BTP Cloud Foundry)
+          files: mta_archives/*.mtar
+
+  # ===========================================================================
+  # JOB 5: SECURITY SCAN (runs in parallel)
+  # ===========================================================================
+  security-scan:
+    name: '🔒 Security Scan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'novabuild-p2p-analytics'
+          path: '.'
+          format: 'HTML'
+          out: 'dependency-check-report'
+        continue-on-error: true
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: dependency-check-report/
+          retention-days: 30

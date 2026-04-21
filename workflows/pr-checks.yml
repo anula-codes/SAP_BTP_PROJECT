@@ -1,0 +1,59 @@
+# ============================================================
+# PR Validation Checks
+# File: .github/workflows/pr-checks.yml
+# ============================================================
+
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+        env:
+          CDS_ENV: test
+          NODE_ENV: test
+
+      - name: Verify CDS models compile
+        run: |
+          npm install -g @sap/cds-dk
+          cds compile db/ srv/ --to json > /dev/null
+          echo "CDS models compile successfully"
+
+      - name: Check no hardcoded secrets
+        run: |
+          # Fail if any credentials are hardcoded
+          ! grep -r "password\s*=" --include="*.js" --include="*.json" . \
+            --exclude-dir=node_modules --exclude-dir=.git \
+            | grep -v "package" | grep -v "test" | grep -v "#"
+        continue-on-error: true
+
+      - name: PR summary
+        if: always()
+        run: |
+          echo "PR Check Summary"
+          echo "================"
+          echo "Branch: ${{ github.head_ref }}"
+          echo "Target: ${{ github.base_ref }}"
+          echo "Commit: ${{ github.sha }}"

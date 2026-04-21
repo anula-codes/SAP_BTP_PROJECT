@@ -1,0 +1,262 @@
+# ============================================================
+# NovaBuild P2P Analytics — GitHub Actions CI/CD Pipeline
+# File: .github/workflows/ci.yml
+# ============================================================
+
+name: CI/CD Pipeline — NovaBuild P2P Analytics
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**', 'hotfix/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20'
+  CDS_ENV: test
+
+jobs:
+  # ── JOB 1: Lint ──────────────────────────────────────────────
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check for security vulnerabilities
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ── JOB 2: Unit & Integration Tests ─────────────────────────
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        node-version: ['18', '20']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install SQLite for tests
+        run: npm install sqlite3 --save-dev
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        env:
+          CDS_ENV: test
+          NODE_ENV: test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: matrix.node-version == '20'
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Coverage summary
+        uses: actions/upload-artifact@v4
+        if: matrix.node-version == '20' && always()
+        with:
+          name: test-results
+          path: |
+            coverage/lcov.info
+            coverage/coverage-summary.json
+          retention-days: 7
+
+  # ── JOB 3: CDS Build Validation ─────────────────────────────
+  build-validate:
+    name: CDS Build Validation
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install CDS DK
+        run: npm install -g @sap/cds-dk
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate CDS models compile
+        run: cds compile db/ srv/ --to json > /dev/null
+        
+      - name: Check CDS metadata generation
+        run: cds compile srv/p2p-service.cds --to edmx > /dev/null
+
+      - name: Run CDS build (production)
+        run: cds build --production
+        env:
+          CDS_ENV: production
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cds-build-output
+          path: gen/
+          retention-days: 3
+
+  # ── JOB 4: MTA Build (only on main/develop) ─────────────────
+  mta-build:
+    name: MTA Archive Build
+    runs-on: ubuntu-latest
+    needs: build-validate
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install MTA Build Tool
+        run: npm install -g mbt
+
+      - name: Install CDS DK
+        run: npm install -g @sap/cds-dk
+
+      - name: Build CDS production artifacts
+        run: cds build --production
+
+      - name: Build MTA archive
+        run: mbt build -p=cf
+        
+      - name: Upload MTA archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtar-${{ github.sha }}
+          path: mta_archives/*.mtar
+          retention-days: 14
+
+  # ── JOB 5: Deploy to BTP (only on main) ─────────────────────
+  deploy-btp:
+    name: Deploy to SAP BTP Cloud Foundry
+    runs-on: ubuntu-latest
+    needs: mta-build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: ${{ steps.get-url.outputs.app-url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download MTA archive
+        uses: actions/download-artifact@v4
+        with:
+          name: mtar-${{ github.sha }}
+          path: mta_archives/
+
+      - name: Install CF CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx
+          sudo mv cf8 /usr/local/bin/cf
+          cf version
+
+      - name: Login to Cloud Foundry
+        run: |
+          cf login \
+            -a ${{ secrets.CF_API_URL }} \
+            -u ${{ secrets.CF_USERNAME }} \
+            -p ${{ secrets.CF_PASSWORD }} \
+            -o ${{ secrets.CF_ORG }} \
+            -s ${{ secrets.CF_SPACE }}
+
+      - name: Install MultiApps CF plugin
+        run: |
+          cf install-plugin multiapps -f
+          
+      - name: Deploy to BTP
+        run: |
+          cf deploy mta_archives/*.mtar \
+            --strategy rolling \
+            --skip-testing-phase
+
+      - name: Get app URL
+        id: get-url
+        run: |
+          URL=$(cf app novabuild-p2p-analytics-srv | grep routes | awk '{print $2}')
+          echo "app-url=https://$URL" >> $GITHUB_OUTPUT
+
+      - name: Smoke test deployed app
+        run: |
+          APP_URL=$(cf app novabuild-p2p-analytics-srv | grep routes | awk '{print $2}')
+          curl -f "https://$APP_URL/p2p/" || exit 1
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          echo "Deployment status: ${{ job.status }}"
+          echo "App URL: ${{ steps.get-url.outputs.app-url }}"
+
+  # ── JOB 6: Deploy to Staging (on develop) ───────────────────
+  deploy-staging:
+    name: Deploy to Staging (BTP Dev Space)
+    runs-on: ubuntu-latest
+    needs: mta-build
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+    steps:
+      - name: Download MTA archive
+        uses: actions/download-artifact@v4
+        with:
+          name: mtar-${{ github.sha }}
+          path: mta_archives/
+
+      - name: Install CF CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" | tar -zx
+          sudo mv cf8 /usr/local/bin/cf
+
+      - name: Login to CF (staging)
+        run: |
+          cf login \
+            -a ${{ secrets.CF_API_URL }} \
+            -u ${{ secrets.CF_USERNAME }} \
+            -p ${{ secrets.CF_PASSWORD }} \
+            -o ${{ secrets.CF_ORG }} \
+            -s ${{ secrets.CF_STAGING_SPACE }}
+
+      - name: Install MultiApps plugin
+        run: cf install-plugin multiapps -f
+
+      - name: Deploy to staging
+        run: cf deploy mta_archives/*.mtar --strategy rolling
