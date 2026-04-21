@@ -1,0 +1,79 @@
+-- ============================================================
+-- NovaBuild P2P Analytics — HANA Cloud Init Script
+-- File: db/init.sql
+-- Run ONCE after HDI container deployment to create
+-- additional HANA-specific objects (views, procedures, roles)
+-- ============================================================
+
+-- ── View: Overdue PO Report ───────────────────────────────────
+CREATE OR REPLACE VIEW "NOVABUILD_OVERDUE_POS" AS
+SELECT
+  po."PONUMBER"      AS "PO_NUMBER",
+  po."PLANT"         AS "PLANT",
+  po."PURCHGROUP"    AS "PURCH_GROUP",
+  po."DELIVERYDATE"  AS "DELIVERY_DATE",
+  po."TOTALVALUE"    AS "TOTAL_VALUE",
+  po."STATUS"        AS "STATUS",
+  v."NAME"           AS "VENDOR_NAME",
+  DAYS_BETWEEN(po."DELIVERYDATE", CURRENT_DATE) AS "DAYS_OVERDUE"
+FROM "NOVABUILD_P2P_PURCHASEORDERS" po
+JOIN "NOVABUILD_P2P_VENDORS"        v ON po."VENDOR_VENDORID" = v."VENDORID"
+WHERE po."DELIVERYDATE" < CURRENT_DATE
+  AND po."STATUS" NOT IN ('CLOSED','CANCELLED','INVOICED','FULLY_DELIVERED');
+
+-- ── View: Invoice Aging ───────────────────────────────────────
+CREATE OR REPLACE VIEW "NOVABUILD_INVOICE_AGING" AS
+SELECT
+  inv."INVOICENO"    AS "INVOICE_NO",
+  inv."VENDOR_VENDORID" AS "VENDOR_ID",
+  v."NAME"           AS "VENDOR_NAME",
+  inv."DUEDATE"      AS "DUE_DATE",
+  inv."INVOICEAMOUNT"AS "INVOICE_AMOUNT",
+  inv."STATUS"       AS "STATUS",
+  DAYS_BETWEEN(CURRENT_DATE, inv."DUEDATE") AS "DAYS_TO_DUE",
+  CASE
+    WHEN DAYS_BETWEEN(CURRENT_DATE, inv."DUEDATE") < 0  THEN 'OVERDUE'
+    WHEN DAYS_BETWEEN(CURRENT_DATE, inv."DUEDATE") <= 7 THEN 'DUE_SOON'
+    ELSE 'CURRENT'
+  END AS "AGING_BUCKET"
+FROM "NOVABUILD_P2P_INVOICEVERIFICATIONS" inv
+JOIN "NOVABUILD_P2P_VENDORS" v ON inv."VENDOR_VENDORID" = v."VENDORID"
+WHERE inv."STATUS" IN ('PENDING','APPROVED');
+
+-- ── Procedure: Get Vendor Spend Summary ───────────────────────
+CREATE OR REPLACE PROCEDURE "NOVABUILD_VENDOR_SPEND_SUMMARY"(
+  IN  iv_fiscal_year  INTEGER,
+  OUT ot_result       TABLE (
+    VENDOR_ID    NVARCHAR(10),
+    VENDOR_NAME  NVARCHAR(100),
+    TOTAL_ORDERS INTEGER,
+    TOTAL_SPEND  DECIMAL(15,2),
+    AVG_VALUE    DECIMAL(15,2),
+    LAST_ORDER   DATE
+  )
+)
+LANGUAGE SQLSCRIPT AS
+BEGIN
+  ot_result = SELECT
+    po."VENDOR_VENDORID"     AS VENDOR_ID,
+    v."NAME"                  AS VENDOR_NAME,
+    COUNT(po."PONUMBER")      AS TOTAL_ORDERS,
+    SUM(po."TOTALVALUE")      AS TOTAL_SPEND,
+    AVG(po."TOTALVALUE")      AS AVG_VALUE,
+    MAX(po."DOCDATE")         AS LAST_ORDER
+  FROM "NOVABUILD_P2P_PURCHASEORDERS" po
+  JOIN "NOVABUILD_P2P_VENDORS" v ON po."VENDOR_VENDORID" = v."VENDORID"
+  WHERE YEAR(po."DOCDATE") = :iv_fiscal_year
+    AND po."STATUS" != 'CANCELLED'
+  GROUP BY po."VENDOR_VENDORID", v."NAME"
+  ORDER BY TOTAL_SPEND DESC;
+END;
+
+-- ── Role: P2P Analytics Read ──────────────────────────────────
+-- Execute in HANA DB Explorer as DBADMIN:
+-- CREATE ROLE "NOVABUILD_P2P_VIEWER";
+-- GRANT SELECT ON SCHEMA <HDI_SCHEMA> TO "NOVABUILD_P2P_VIEWER";
+-- GRANT SELECT ON "NOVABUILD_OVERDUE_POS"   TO "NOVABUILD_P2P_VIEWER";
+-- GRANT SELECT ON "NOVABUILD_INVOICE_AGING" TO "NOVABUILD_P2P_VIEWER";
+
+SELECT 'NovaBuild HANA init script executed successfully' AS MESSAGE FROM DUMMY;

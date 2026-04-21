@@ -1,0 +1,11 @@
+vendorID,name,gstNumber,panNumber,country_code,state,city,address,pinCode,email,phone,paymentTerms,isActive,creditLimit,currency_code
+V001,Tata Steel Limited,27AAACT2727Q1ZQ,AAACT2727Q,IN,Maharashtra,Mumbai,"Bombay House, 24 Homi Mody St",400001,procurement@tatasteel.com,+912266658282,NT30,true,5000000,INR
+V002,Hindustan Zinc Ltd,08AAACH3605C1Z3,AAACH3605C,IN,Rajasthan,Udaipur,"Yashad Bhawan, Udaipur",313001,vendor@hindzinc.com,+912942521643,NT45,true,3000000,INR
+V003,Mahindra Logistics,27AABCM7518M1ZE,AABCM7518M,IN,Maharashtra,Pune,"Mahindra Towers, Viman Nagar",411014,ops@mahindralogistics.com,+912066622200,NT30,true,2000000,INR
+V004,Siemens India Limited,27AAECS3571E1ZP,AAECS3571E,IN,Maharashtra,Mumbai,"130 Pandurang Budhkar Marg",400018,procurement@siemens.com,+912224967000,NT60,true,8000000,INR
+V005,Bosch India Ltd,29AAACB1777B1ZU,AAACB1777B,IN,Karnataka,Bengaluru,"123 Infantry Road",560001,supply@boschindia.com,+918025588888,NT30,true,4000000,INR
+V006,Cummins India Limited,27AACCC7640F1ZN,AACCC7640F,IN,Maharashtra,Pune,"Tower A, Survey No 21",411057,vendor@cummins.com,+912027211800,NT45,true,3500000,INR
+V007,Thermax Ltd,27AAACT0618G1ZQ,AAACT0618G,IN,Maharashtra,Pune,"D-13, MIDC Industrial Estate",411018,procurement@thermax.com,+912027065000,NT60,true,6000000,INR
+V008,Larsen & Toubro Ltd,27AABCL1115L1ZT,AABCL1115L,IN,Maharashtra,Mumbai,"L&T House, Ballard Estate",400001,supply@lntecc.com,+912267528000,NT30,true,10000000,INR
+V009,SKF India Ltd,27AAACS4388K1ZI,AAACS4388K,IN,Maharashtra,Pune,"Mahatma Gandhi Road, Camp",411001,procurement@skfindia.com,+912026130000,NT45,true,2500000,INR
+V010,Havells India Ltd,07AAACH1744C1ZV,AAACH1744C,IN,Delhi,New Delhi,"QRG Towers, 2D Sector 126",201304,vendor@havells.com,+911204294000,NT30,true,3000000,INR

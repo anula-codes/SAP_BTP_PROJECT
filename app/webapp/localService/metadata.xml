@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Alias="Capabilities" Namespace="Org.OData.Capabilities.V1"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="P2PAnalyticsService" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+
+      <!-- ── EntityTypes ──────────────────────────────────── -->
+      <EntityType Name="Vendors">
+        <Key><PropertyRef Name="vendorID"/></Key>
+        <Property Name="vendorID"     Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="name"         Type="Edm.String" MaxLength="100"/>
+        <Property Name="gstNumber"    Type="Edm.String" MaxLength="15"/>
+        <Property Name="country_code" Type="Edm.String" MaxLength="3"/>
+        <Property Name="state"        Type="Edm.String" MaxLength="50"/>
+        <Property Name="city"         Type="Edm.String" MaxLength="60"/>
+        <Property Name="paymentTerms" Type="Edm.String" MaxLength="4"/>
+        <Property Name="isActive"     Type="Edm.Boolean"/>
+        <Property Name="creditLimit"  Type="Edm.Decimal" Scale="2"/>
+        <Property Name="currency_code"Type="Edm.String" MaxLength="3"/>
+      </EntityType>
+
+      <EntityType Name="PurchaseOrders">
+        <Key><PropertyRef Name="poNumber"/></Key>
+        <Property Name="poNumber"     Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="prReference"  Type="Edm.String" MaxLength="10"/>
+        <Property Name="vendor_vendorID" Type="Edm.String" MaxLength="10"/>
+        <Property Name="plant"        Type="Edm.String" MaxLength="4"/>
+        <Property Name="purchOrg"     Type="Edm.String" MaxLength="4"/>
+        <Property Name="purchGroup"   Type="Edm.String" MaxLength="3"/>
+        <Property Name="docDate"      Type="Edm.Date"/>
+        <Property Name="deliveryDate" Type="Edm.Date"/>
+        <Property Name="paymentTerms" Type="Edm.String" MaxLength="4"/>
+        <Property Name="totalValue"   Type="Edm.Decimal" Scale="2"/>
+        <Property Name="taxAmount"    Type="Edm.Decimal" Scale="2"/>
+        <Property Name="currency_code"Type="Edm.String" MaxLength="3"/>
+        <Property Name="status"       Type="Edm.String" MaxLength="10"/>
+        <Property Name="remarks"      Type="Edm.String" MaxLength="500"/>
+      </EntityType>
+
+      <EntityType Name="PurchaseRequisitions">
+        <Key><PropertyRef Name="prNumber"/></Key>
+        <Property Name="prNumber"     Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="title"        Type="Edm.String" MaxLength="100"/>
+        <Property Name="requestedBy"  Type="Edm.String" MaxLength="12"/>
+        <Property Name="requestedDate"Type="Edm.Date"/>
+        <Property Name="plant"        Type="Edm.String" MaxLength="4"/>
+        <Property Name="costCenter"   Type="Edm.String" MaxLength="10"/>
+        <Property Name="status"       Type="Edm.String" MaxLength="10"/>
+        <Property Name="totalValue"   Type="Edm.Decimal" Scale="2"/>
+        <Property Name="currency_code"Type="Edm.String" MaxLength="3"/>
+        <Property Name="remarks"      Type="Edm.String" MaxLength="500"/>
+      </EntityType>
+
+      <EntityType Name="GoodsReceipts">
+        <Key><PropertyRef Name="grNumber"/></Key>
+        <Property Name="grNumber"     Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="poReference"  Type="Edm.String" MaxLength="10"/>
+        <Property Name="vendor_vendorID" Type="Edm.String" MaxLength="10"/>
+        <Property Name="plant"        Type="Edm.String" MaxLength="4"/>
+        <Property Name="postingDate"  Type="Edm.Date"/>
+        <Property Name="movementType" Type="Edm.String" MaxLength="3"/>
+        <Property Name="totalValue"   Type="Edm.Decimal" Scale="2"/>
+        <Property Name="currency_code"Type="Edm.String" MaxLength="3"/>
+        <Property Name="status"       Type="Edm.String" MaxLength="10"/>
+        <Property Name="deliveryNote" Type="Edm.String" MaxLength="16"/>
+      </EntityType>
+
+      <EntityType Name="InvoiceVerifications">
+        <Key><PropertyRef Name="invoiceNo"/></Key>
+        <Property Name="invoiceNo"    Type="Edm.String" Nullable="false" MaxLength="16"/>
+        <Property Name="vendor_vendorID" Type="Edm.String" MaxLength="10"/>
+        <Property Name="poReference"  Type="Edm.String" MaxLength="10"/>
+        <Property Name="grReference"  Type="Edm.String" MaxLength="10"/>
+        <Property Name="invoiceDate"  Type="Edm.Date"/>
+        <Property Name="dueDate"      Type="Edm.Date"/>
+        <Property Name="baseAmount"   Type="Edm.Decimal" Scale="2"/>
+        <Property Name="taxAmount"    Type="Edm.Decimal" Scale="2"/>
+        <Property Name="invoiceAmount"Type="Edm.Decimal" Scale="2"/>
+        <Property Name="currency_code"Type="Edm.String" MaxLength="3"/>
+        <Property Name="status"       Type="Edm.String" MaxLength="10"/>
+        <Property Name="remarks"      Type="Edm.String" MaxLength="500"/>
+      </EntityType>
+
+      <!-- ── EntityContainer ──────────────────────────────── -->
+      <EntityContainer Name="EntityContainer">
+        <EntitySet Name="Vendors"               EntityType="P2PAnalyticsService.Vendors"/>
+        <EntitySet Name="PurchaseOrders"         EntityType="P2PAnalyticsService.PurchaseOrders"/>
+        <EntitySet Name="PurchaseRequisitions"   EntityType="P2PAnalyticsService.PurchaseRequisitions"/>
+        <EntitySet Name="GoodsReceipts"          EntityType="P2PAnalyticsService.GoodsReceipts"/>
+        <EntitySet Name="InvoiceVerifications"   EntityType="P2PAnalyticsService.InvoiceVerifications"/>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

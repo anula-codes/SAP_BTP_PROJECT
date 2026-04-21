@@ -1,0 +1,21 @@
+materialID,description,shortText,materialGroup,uom,hsnCode,gstRate,valuationClass,standardPrice,currency_code,isActive,plant
+M001,Hot Rolled Steel Coil 3mm,HR Steel Coil,RAWMAT,KG,72082700,18.00,3000,85.50,INR,true,NB10
+M002,Cold Rolled Steel Sheet 2mm,CR Steel Sheet,RAWMAT,KG,72091600,18.00,3000,102.00,INR,true,NB10
+M003,Aluminium Ingot 99.7%,Al Ingot,RAWMAT,KG,76011090,18.00,3000,245.00,INR,true,NB10
+M004,Copper Wire Rod 8mm,Copper Rod,RAWMAT,KG,74081100,18.00,3000,780.00,INR,true,NB10
+M005,Industrial Bearings SKF 6205,Bearing 6205,MRO,EA,84821010,18.00,3100,450.00,INR,true,NB10
+M006,Hydraulic Oil ISO VG 46 200L,Hyd Oil 200L,MRO,EA,27101920,18.00,3100,8500.00,INR,true,NB10
+M007,Safety Gloves Leather Pair,Safety Gloves,MRO,EA,39262090,18.00,3100,120.00,INR,true,NB10
+M008,Cutting Tool Carbide Insert,Carbide Insert,MRO,EA,82079090,18.00,3100,850.00,INR,true,NB20
+M009,Electric Motor 7.5kW 4P,Motor 7.5kW,CAPEX,EA,85011093,18.00,3200,45000.00,INR,true,NB10
+M010,PLC Siemens S7-1200,PLC S7-1200,CAPEX,EA,85371090,18.00,3200,85000.00,INR,true,NB10
+M011,Welding Wire ER70S-6 15kg,Welding Wire,MRO,EA,83119000,18.00,3100,3200.00,INR,true,NB10
+M012,Industrial Paint Primer 20L,Primer 20L,MRO,EA,32081090,18.00,3100,2800.00,INR,true,NB20
+M013,Zinc Coating Powder 25kg,Zinc Powder,RAWMAT,KG,79011100,18.00,3000,320.00,INR,true,NB10
+M014,Rubber Gasket 150mm Pair,Gasket 150mm,MRO,EA,40169990,18.00,3100,280.00,INR,true,NB10
+M015,Compressed Air Dryer 300CFM,Air Dryer,CAPEX,EA,84213920,18.00,3200,125000.00,INR,true,NB10
+M016,Stainless Steel Fasteners M12,SS Bolt M12,MRO,EA,73181590,18.00,3100,45.00,INR,true,NB10
+M017,Conveyor Belt 1200mm x 10m,Conv Belt,MRO,MTR,59100090,18.00,3100,4500.00,INR,true,NB10
+M018,Annual Maintenance AMC,AMC Service,SERVICE,EA,99851119,18.00,3300,150000.00,INR,true,NB10
+M019,Freight Transport Service,Transport,SERVICE,EA,99652219,18.00,3300,25000.00,INR,true,NB10
+M020,Calibration Service,Calibration,SERVICE,EA,99851119,18.00,3300,18000.00,INR,true,NB10

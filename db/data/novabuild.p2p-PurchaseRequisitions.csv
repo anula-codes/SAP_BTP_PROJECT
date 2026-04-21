@@ -1,0 +1,11 @@
+prNumber,title,requestedBy,requestedDate,plant,costCenter,status,totalValue,currency_code,remarks
+PR0000001,Raw Material Q1 Steel Procurement,EMP001,2025-01-05,NB10,CC100,CONVERTED,855000.00,INR,Quarterly steel requirement for production line A
+PR0000002,MRO Items Replenishment Jan,EMP002,2025-01-08,NB10,CC200,CONVERTED,48750.00,INR,Routine MRO replenishment for maintenance
+PR0000003,Capital Equipment - PLC Upgrade,EMP003,2025-01-15,NB10,CC100,APPROVED,255000.00,INR,PLC upgrade for automated welding line
+PR0000004,Safety Equipment Q1,EMP004,2025-01-18,NB20,CC200,APPROVED,36000.00,INR,Annual safety gear for shop floor workers
+PR0000005,Copper Wire Rod Procurement,EMP001,2025-02-01,NB10,CC100,CONVERTED,780000.00,INR,Copper for transformer manufacturing
+PR0000006,Annual Maintenance Contract Renewal,EMP005,2025-02-10,NB10,CC200,PENDING,300000.00,INR,Renew AMC for production equipment
+PR0000007,Paint and Coating Materials,EMP002,2025-02-14,NB20,CC100,PENDING,112000.00,INR,Paint for finished goods surface treatment
+PR0000008,Bearings and Spare Parts,EMP003,2025-02-20,NB10,CC100,REJECTED,180000.00,INR,Rejected - duplicate of PR0000002
+PR0000009,Calibration Services FY2025,EMP005,2025-03-01,NB10,CC200,PENDING,90000.00,INR,Annual calibration for measurement tools
+PR0000010,Aluminium Ingot Q2,EMP001,2025-03-10,NB10,CC100,PENDING,1225000.00,INR,Aluminium for Q2 production schedule
